@@ -23,28 +23,41 @@ const generateCode = () => {
 export const requestOtp = async (phone) => {
     const now = new Date();
     const windowMs = env.OTP_REQUEST_WINDOW_SECONDS * 1000;
-    const existing = await Otp.findOne({ phone }).lean();
+    const windowOpenSince = new Date(now.getTime() - windowMs);
+    const code = generateCode();
+    const fresh = { codeHash: hashCode(phone, code), expiresAt: new Date(now.getTime() + env.OTP_TTL_SECONDS * 1000), attempts: 0 };
 
-    const inWindow = existing && now - existing.windowStartedAt < windowMs;
-    if (inWindow && existing.requestCount >= env.OTP_MAX_REQUESTS_PER_WINDOW) {
-        const retryInMin = Math.ceil((windowMs - (now - existing.windowStartedAt)) / 60000);
+    // Each attempt is a single conditional write, so parallel requests can't
+    // all read "under the limit" and each issue a code (and an SMS).
+    let issued = false;
+    for (let attempt = 0; attempt < 3 && !issued; attempt += 1) {
+        const counted = await Otp.updateOne(
+            { phone, windowStartedAt: { $gt: windowOpenSince }, requestCount: { $lt: env.OTP_MAX_REQUESTS_PER_WINDOW } },
+            { $set: fresh, $inc: { requestCount: 1 } }
+        );
+        if (counted.modifiedCount) {
+            issued = true;
+            break;
+        }
+        try {
+            // No row yet, or its window has passed: start a new window.
+            await Otp.updateOne(
+                { phone, windowStartedAt: { $lte: windowOpenSince } },
+                { $set: { ...fresh, requestCount: 1, windowStartedAt: now } },
+                { upsert: true }
+            );
+            issued = true;
+        } catch (err) {
+            // The row exists with an open window. Either it's at the limit, or a
+            // parallel request just created it; the next pass tells which.
+            if (err?.code !== 11000) throw err;
+        }
+    }
+    if (!issued) {
+        const existing = await Otp.findOne({ phone }).select('windowStartedAt').lean();
+        const retryInMin = Math.max(1, Math.ceil((windowMs - (now - (existing?.windowStartedAt ?? now))) / 60000));
         throw new TooManyRequestsError(`Too many OTP requests. Try again in ${retryInMin} minute(s).`);
     }
-
-    const code = generateCode();
-    await Otp.updateOne(
-        { phone },
-        {
-            $set: {
-                codeHash: hashCode(phone, code),
-                expiresAt: new Date(now.getTime() + env.OTP_TTL_SECONDS * 1000),
-                attempts: 0,
-                ...(inWindow ? {} : { requestCount: 1, windowStartedAt: now })
-            },
-            ...(inWindow ? { $inc: { requestCount: 1 } } : {})
-        },
-        { upsert: true }
-    );
 
     if (!env.USE_DEFAULT_OTP) {
         try {

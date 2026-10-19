@@ -96,6 +96,19 @@ const schema = z
         if (v.NODE_ENV === 'production' && v.SMS_PROVIDER === 'console' && !v.USE_DEFAULT_OTP) {
             ctx.addIssue({ code: 'custom', path: ['SMS_PROVIDER'], message: 'console cannot deliver OTPs in production' });
         }
+        if (v.NODE_ENV === 'production' && !v.TRUST_PROXY) {
+            // Behind nginx every client would look like 127.0.0.1 and share one rate-limit bucket.
+            ctx.addIssue({ code: 'custom', path: ['TRUST_PROXY'], message: 'must be true in production (the API runs behind nginx)' });
+        }
+        if (v.NODE_ENV === 'production' && !v.COOKIE_SECURE) {
+            ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'must be true in production (serve over HTTPS)' });
+        }
+        if (v.NODE_ENV === 'production' && v.JWT_ACCESS_SECRET === v.JWT_REFRESH_SECRET) {
+            ctx.addIssue({ code: 'custom', path: ['JWT_REFRESH_SECRET'], message: 'must differ from JWT_ACCESS_SECRET' });
+        }
+        if (v.NODE_ENV === 'production' && Boolean(v.RAZORPAY_KEY_ID) && !v.RAZORPAY_WEBHOOK_SECRET) {
+            ctx.addIssue({ code: 'custom', path: ['RAZORPAY_WEBHOOK_SECRET'], message: 'required when Razorpay is enabled; without it no payment is ever confirmed' });
+        }
         if (v.COOKIE_SAMESITE === 'none' && !v.COOKIE_SECURE) {
             ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'must be true when COOKIE_SAMESITE=none' });
         }

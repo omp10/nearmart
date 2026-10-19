@@ -28,6 +28,40 @@ npm run dev                 # http://localhost:5173 (proxies /api to :5000)
 
 `npm test` in `backend/` runs the API tests against an in-memory MongoDB (no setup needed).
 
+## For the app team
+
+The customer API contract is [`docs/openapi.yaml`](docs/openapi.yaml) (also served at
+`GET /api/v1/openapi.yaml`). Open it in Swagger Editor, Stoplight or Postman. A test checks that
+every documented path exists and that public operations really are public, so the spec can't
+silently drift from the code.
+
+## Deploying
+
+See [`deploy/DEPLOY.md`](deploy/DEPLOY.md): server setup, production `.env`, `npm run db:indexes`,
+PM2, nginx/TLS, Razorpay webhook wiring, go-live checklist, backups and scaling notes. The API
+refuses to start in production with unsafe settings (dev OTPs, console SMS, insecure cookies, no
+`TRUST_PROXY`, Razorpay without a webhook secret, identical JWT secrets). CI
+(`.github/workflows/ci.yml`) runs the tests and the admin build, and fails on high-severity
+dependency advisories.
+
+## Security notes
+
+- Access tokens pin HS256. Refresh tokens are opaque, hashed, rotated, with reuse detection. The
+  admin refresh cookie is httpOnly, SameSite, path-scoped, with an Origin check against CSRF.
+- Staff accounts lock for 15 minutes after 8 wrong passwords; a password reset unlocks them.
+  Non-super admins can only manage staff whose role, modules and permissions are within their own.
+- Money is server-side only. Stock, slot capacity, coupon limits (total and per customer), refund
+  caps and OTP request limits are enforced by conditional atomic updates, so they hold under
+  concurrent requests. Webhooks are HMAC-verified and deduplicated by event id, and refunds by refund id.
+  Only *captured* payments count as paid.
+- Every upload is decoded and re-encoded to WebP (GIFs to animated WebP) with a 50-megapixel cap,
+  so only real image data is ever stored.
+- One customer can hold at most 3 unpaid and 10 open orders (3 unpaid and 5 upcoming laundry
+  pickups), which stops stock or slots being tied up.
+- Known and accepted: rate limits are in-memory (one API instance; see the scaling notes); FCM
+  device tokens re-home to whichever account registers them last (needed when two people share a
+  phone); uploads aren't garbage-collected.
+
 ## API conventions
 
 - Base path `/api/v1`. Bodies: `{ success, message, data }`; errors: `{ success: false, message, details?, code? }`.
@@ -166,7 +200,7 @@ known problems were fixed:
 | **3 (done)** | §2, §3, §4, §6 | cart, per-module checkout with server-side pricing & GST, COD + Razorpay, coupons, order status flow, unavailable items with partial refunds, unpaid-order expiry, reorder | orders board, order detail (advance / cancel / unavailable / retry refund), coupons, GST on products |
 | **4 (done)** | §5 | laundry price chart (per kg / per piece, minimums), pickup & return slots, bookings, weighing with final price, refunds or balance due, unpaid-booking expiry | laundry services, bookings board, booking detail (weigh with live preview, schedule return, advance, cancel) |
 | **5 (done)** | §7, §8 | dashboard counts, 5 reports with CSV/XLSX export, settings enforced at checkout, banners, customer management; ops users see only their modules throughout | dashboard (7-day chart), reports, settings, banners, customers |
-| 6 | §10 | OpenAPI spec for the app team, load/UAT fixes, deployment | — |
+| **6 (done)** | §9, §10 | OpenAPI 3.1 contract for the app (with a contract test), security review and fixes, production config guards, index sync script, CI, deploy runbook | — |
 
 Open decisions to confirm with the client before Phases 2–4 (SOW §11): vendor vs. internal ops,
 the cross-category checkout split, how vegetables are priced (fixed pack vs. packed weight),

@@ -1,5 +1,5 @@
 import { env } from '../../config/env.js';
-import { AuthError, ForbiddenError, ValidationError } from '../../lib/errors.js';
+import { AuthError, ForbiddenError, TooManyRequestsError, ValidationError } from '../../lib/errors.js';
 import { User } from '../users/user.model.js';
 import { Staff } from '../staff/staff.model.js';
 import { FULL_PERMISSIONS } from '../staff/permissions.js';
@@ -83,13 +83,32 @@ export const verifyCustomerOtp = async ({ phone, otp, name }, meta = {}) => {
 
 // ─── Staff (admin / ops panel) ───
 
+/** Wrong passwords allowed before an account locks, and for how long. */
+export const MAX_FAILED_LOGINS = 8;
+const LOCK_MINUTES = 15;
+
 export const staffLogin = async ({ email, password }, meta = {}) => {
     const staff = await Staff.findOne({ email: String(email).toLowerCase().trim() }).select('+password');
     // Same message for unknown email and wrong password, so the form can't be used to find accounts.
-    if (!staff || !(await staff.comparePassword(password))) throw new AuthError('Invalid email or password');
+    if (!staff) throw new AuthError('Invalid email or password');
+
+    // The per-IP rate limit doesn't stop guessing spread over many IPs; this caps guesses per account.
+    if (staff.lockedUntil && staff.lockedUntil > new Date()) {
+        const minutes = Math.ceil((staff.lockedUntil - Date.now()) / 60000);
+        throw new TooManyRequestsError(`Too many wrong passwords. Try again in ${minutes} minute(s) or ask an admin to reset it.`);
+    }
+    if (!(await staff.comparePassword(password))) {
+        const failed = await Staff.findOneAndUpdate({ _id: staff._id }, { $inc: { failedLogins: 1 } }, { new: true }).select('failedLogins');
+        if (failed.failedLogins >= MAX_FAILED_LOGINS) {
+            await Staff.updateOne({ _id: staff._id }, { $set: { failedLogins: 0, lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60000) } });
+        }
+        throw new AuthError('Invalid email or password');
+    }
     if (!staff.isActive) throw new ForbiddenError('This account has been deactivated');
 
     staff.lastLoginAt = new Date();
+    staff.failedLogins = 0;
+    staff.lockedUntil = null;
     await staff.save();
 
     const session = await issueSession(

@@ -1,6 +1,6 @@
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js';
 import { formatRupees } from '../../lib/money.js';
-import { Coupon, CouponRedemption } from './coupon.model.js';
+import { Coupon, CouponRedemption, CouponUsage } from './coupon.model.js';
 
 /** Discount a coupon gives on a subtotal (never more than the subtotal). */
 export const discountFor = (coupon, subtotalPaise) => {
@@ -34,14 +34,39 @@ export const evaluateCoupon = async (code, { userId, module, subtotalPaise, hasP
  * Records the use against the total limit atomically, so a limited coupon
  * can't be over-redeemed by simultaneous orders.
  */
+/** Takes one of this customer's uses of the coupon, atomically. */
+const takeCustomerUse = async (coupon, userId) => {
+    const filter = { coupon: coupon._id, user: userId, count: { $lt: coupon.perUserLimit } };
+    try {
+        await CouponUsage.updateOne(filter, { $inc: { count: 1 } }, { upsert: true });
+    } catch (err) {
+        if (err?.code !== 11000) throw err;
+        // Row exists and is at the limit, or a parallel request just created it.
+        const retry = await CouponUsage.updateOne(filter, { $inc: { count: 1 } });
+        if (retry.modifiedCount === 0) throw new ConflictError('You have already used this coupon');
+    }
+};
+
+const giveBackCustomerUse = (couponId, userId) =>
+    CouponUsage.updateOne({ coupon: couponId, user: userId, count: { $gt: 0 } }, { $inc: { count: -1 } });
+
+/**
+ * Records the use against the per-customer and total limits atomically, so
+ * neither can be exceeded by simultaneous orders.
+ */
 export const redeemCoupon = async ({ coupon, userId, orderId, discountPaise }) => {
+    await takeCustomerUse(coupon, userId);
     const limit = coupon.usageLimit != null ? { usedCount: { $lt: coupon.usageLimit } } : {};
     const res = await Coupon.updateOne({ _id: coupon._id, isActive: true, ...limit }, { $inc: { usedCount: 1 } });
-    if (res.modifiedCount === 0) throw new ConflictError('This coupon has just been fully used');
+    if (res.modifiedCount === 0) {
+        await giveBackCustomerUse(coupon._id, userId);
+        throw new ConflictError('This coupon has just been fully used');
+    }
     try {
         await CouponRedemption.create({ coupon: coupon._id, user: userId, order: orderId, discountPaise });
     } catch (err) {
         await Coupon.updateOne({ _id: coupon._id }, { $inc: { usedCount: -1 } });
+        await giveBackCustomerUse(coupon._id, userId);
         throw err;
     }
 };
@@ -49,7 +74,9 @@ export const redeemCoupon = async ({ coupon, userId, orderId, discountPaise }) =
 /** Gives the use back when the order is cancelled. */
 export const releaseCoupon = async (orderId) => {
     const redemption = await CouponRedemption.findOneAndDelete({ order: orderId });
-    if (redemption) await Coupon.updateOne({ _id: redemption.coupon, usedCount: { $gt: 0 } }, { $inc: { usedCount: -1 } });
+    if (!redemption) return;
+    await Coupon.updateOne({ _id: redemption.coupon, usedCount: { $gt: 0 } }, { $inc: { usedCount: -1 } });
+    await giveBackCustomerUse(redemption.coupon, redemption.user);
 };
 
 // ─── Admin ───

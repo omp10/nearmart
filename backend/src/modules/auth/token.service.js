@@ -15,6 +15,7 @@ export const hashSecret = (value) =>
  */
 export const signAccessToken = ({ id, kind, role, tokenVersion }) =>
     jwt.sign({ kind, role, tv: tokenVersion }, env.JWT_ACCESS_SECRET, {
+        algorithm: 'HS256',
         subject: String(id),
         issuer: ISSUER,
         expiresIn: env.JWT_ACCESS_EXPIRES_SECONDS
@@ -22,7 +23,8 @@ export const signAccessToken = ({ id, kind, role, tokenVersion }) =>
 
 export const verifyAccessToken = (token) => {
     try {
-        return jwt.verify(token, env.JWT_ACCESS_SECRET, { issuer: ISSUER });
+        // Pin the algorithm: never let the token's own header choose how it is checked.
+        return jwt.verify(token, env.JWT_ACCESS_SECRET, { issuer: ISSUER, algorithms: ['HS256'] });
     } catch {
         throw new AuthError('Invalid or expired token');
     }

@@ -3,7 +3,8 @@ import { EventEmitter } from 'node:events';
 import Razorpay from 'razorpay';
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
-import { AppError, NotFoundError, ValidationError } from '../../lib/errors.js';
+import mongoose from 'mongoose';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js';
 import { Payment, WebhookEvent } from './payment.model.js';
 
 /**
@@ -98,9 +99,10 @@ export const verifyClientPayment = async ({ userId, gatewayOrderId, gatewayPayme
         logger.error({ gatewayOrderId, gatewayPaymentId, paid: remote.amount }, 'Payment amount/order mismatch');
         throw new ValidationError('Payment does not match this order');
     }
-    if (!['captured', 'authorized'].includes(remote.status)) {
-        throw new ValidationError(`Payment is ${remote.status}`);
-    }
+    // Only captured money counts. An authorization can lapse; when Razorpay
+    // captures it, the payment.captured webhook marks it paid.
+    if (remote.status === 'authorized') return payment;
+    if (remote.status !== 'captured') throw new ValidationError(`Payment is ${remote.status}`);
 
     return (await markPaid({ _id: payment._id }, gatewayPaymentId)) || Payment.findById(payment._id);
 };
@@ -111,21 +113,44 @@ export const verifyClientPayment = async ({ userId, gatewayOrderId, gatewayPayme
  * Requests are capped at what has not yet been refunded or requested.
  */
 export const initiateRefund = async (paymentId, amountPaise, reason = '') => {
-    const payment = await Payment.findById(paymentId);
-    if (!payment) throw new NotFoundError('Payment not found');
-    if (!['paid', 'partially_refunded'].includes(payment.status) || !payment.gatewayPaymentId) {
-        throw new ValidationError('Only a captured payment can be refunded');
-    }
-    const requested = payment.refundRequests.reduce((sum, r) => sum + r.amountPaise, 0);
-    const amount = Math.min(Math.round(amountPaise), payment.amountPaise - requested);
-    if (amount <= 0) return null;
+    // Reserve the amount first, atomically against what is still refundable,
+    // so concurrent requests (a double-clicked retry) can't both go out.
+    let reservation = null;
+    let amount = 0;
+    let payment = null;
+    for (let attempt = 0; attempt < 5 && !reservation; attempt += 1) {
+        payment = await Payment.findById(paymentId).lean();
+        if (!payment) throw new NotFoundError('Payment not found');
+        if (!['paid', 'partially_refunded'].includes(payment.status) || !payment.gatewayPaymentId) {
+            throw new ValidationError('Only a captured payment can be refunded');
+        }
+        amount = Math.min(Math.round(amountPaise), payment.amountPaise - payment.refundRequestedPaise);
+        if (amount <= 0) return null;
 
-    const refund = await gateway.refund(payment.gatewayPaymentId, {
-        amount,
-        notes: { reason: String(reason).slice(0, 200), refType: payment.refType, refId: String(payment.refId) }
-    });
-    payment.refundRequests.push({ gatewayRefundId: refund.id, amountPaise: amount, reason });
-    await payment.save();
+        const id = new mongoose.Types.ObjectId();
+        const updated = await Payment.updateOne(
+            { _id: payment._id, refundRequestedPaise: payment.refundRequestedPaise },
+            { $inc: { refundRequestedPaise: amount }, $push: { refundRequests: { reservationId: id, amountPaise: amount, reason } } }
+        );
+        if (updated.modifiedCount) reservation = id;
+    }
+    if (!reservation) throw new ConflictError('Refund is being processed; try again');
+
+    let refund;
+    try {
+        refund = await gateway.refund(payment.gatewayPaymentId, {
+            amount,
+            notes: { reason: String(reason).slice(0, 200), refType: payment.refType, refId: String(payment.refId) }
+        });
+    } catch (err) {
+        // Not sent: release the reservation so a retry can request it.
+        await Payment.updateOne({ _id: payment._id }, { $inc: { refundRequestedPaise: -amount }, $pull: { refundRequests: { reservationId: reservation } } });
+        throw err;
+    }
+    await Payment.updateOne(
+        { _id: payment._id, 'refundRequests.reservationId': reservation },
+        { $set: { 'refundRequests.$.gatewayRefundId': refund.id } }
+    );
     logger.info({ paymentId: String(payment._id), amount }, 'Refund requested');
     return { gatewayRefundId: refund.id, amountPaise: amount };
 };
@@ -191,12 +216,18 @@ const applyWebhookEvent = async (body) => {
         }
         case 'refund.processed': {
             const refund = body.payload?.refund?.entity;
-            const payment = await Payment.findOne({ gatewayPaymentId: refund?.payment_id });
-            if (!payment) break;
-            payment.refundedPaise = Math.min(payment.amountPaise, payment.refundedPaise + Number(refund.amount || 0));
-            payment.status = payment.refundedPaise >= payment.amountPaise ? 'refunded' : 'partially_refunded';
-            await payment.save();
-            paymentEvents.emit('refunded', payment);
+            if (!refund?.id || !refund.payment_id) break;
+            // Applied once per refund id, whatever event id it arrives under.
+            const claimed = await Payment.findOneAndUpdate(
+                { gatewayPaymentId: refund.payment_id, processedRefundIds: { $ne: refund.id } },
+                { $push: { processedRefundIds: refund.id } },
+                { new: true }
+            );
+            if (!claimed) break;
+            claimed.refundedPaise = Math.min(claimed.amountPaise, claimed.refundedPaise + Number(refund.amount || 0));
+            claimed.status = claimed.refundedPaise >= claimed.amountPaise ? 'refunded' : 'partially_refunded';
+            await claimed.save();
+            paymentEvents.emit('refunded', claimed);
             break;
         }
         default:

@@ -26,11 +26,16 @@ const paymentSchema = new mongoose.Schema(
         },
         /** Confirmed by the refund.processed webhook. */
         refundedPaise: { type: Number, default: 0 },
+        /** Sum of refundRequests; the cap is enforced on this counter atomically. */
+        refundRequestedPaise: { type: Number, default: 0, min: 0 },
+        /** Refund ids already applied from refund.processed webhooks (replay guard). */
+        processedRefundIds: { type: [String], default: [] },
         /** Refunds we asked Razorpay for, confirmed or not. */
         refundRequests: {
             type: [
                 {
                     _id: false,
+                    reservationId: mongoose.Schema.Types.ObjectId,
                     gatewayRefundId: String,
                     amountPaise: Number,
                     reason: { type: String, default: '' },

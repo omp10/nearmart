@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import { env } from '../../config/env.js';
-import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../lib/errors.js';
+import { AppError, ConflictError, ForbiddenError, NotFoundError, TooManyRequestsError, ValidationError } from '../../lib/errors.js';
 import { istDate } from '../../lib/istTime.js';
 import { logger } from '../../lib/logger.js';
 import { escapeRegex } from '../../lib/pagination.js';
@@ -87,6 +87,23 @@ export const quote = async (userId, { module, addressId, couponCode }) => {
     return { address, zone, lines, coupon, slotRequired, pricing: priceLines(lines, { zone, coupon }) };
 };
 
+/** Unpaid orders and open orders one customer may hold at a time. */
+export const MAX_UNPAID_ORDERS = 3;
+export const MAX_OPEN_ORDERS = 10;
+
+/**
+ * Each order holds stock and slot capacity. Without a cap, one account could
+ * tie up a product or a day's slots with orders it never pays or collects.
+ */
+const assertWithinOpenLimits = async (userId) => {
+    const [unpaid, open] = await Promise.all([
+        Order.countDocuments({ user: userId, status: 'pending_payment' }),
+        Order.countDocuments({ user: userId, status: { $in: ['placed', 'accepted', 'packing', 'ready', 'dispatched'] } })
+    ]);
+    if (unpaid >= MAX_UNPAID_ORDERS) throw new TooManyRequestsError('Please pay for or cancel your pending orders first');
+    if (open >= MAX_OPEN_ORDERS) throw new TooManyRequestsError('You have many orders in progress. Please wait for some to be delivered.');
+};
+
 /**
  * Places an order for one module's cart lines (scope §2, §3: items for
  * different modules become separate orders).
@@ -100,6 +117,7 @@ export const placeOrder = async (userId, { module, addressId, slotId, couponCode
 
     const { address, zone, lines, coupon, slotRequired, pricing } = await quote(userId, { module, addressId, couponCode });
     await assertCheckoutAllowed({ paymentMethod, totalPaise: pricing.totalPaise });
+    await assertWithinOpenLimits(userId);
     if (slotRequired && !slotId) throw new ValidationError('Please choose a delivery slot');
     if (paymentMethod === 'online' && pricing.totalPaise < 100) throw new ValidationError('Online payment needs a total of at least ₹1');
 

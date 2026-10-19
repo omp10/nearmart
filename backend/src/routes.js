@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
 import { isDbConnected } from './config/db.js';
 import authRoutes from './modules/auth/auth.routes.js';
@@ -31,6 +32,12 @@ const router = Router();
 router.get('/health', (_req, res) => {
     const db = isDbConnected();
     res.status(db ? 200 : 503).json({ success: db, status: db ? 'up' : 'degraded', db: db ? 'connected' : 'disconnected' });
+});
+
+/** The customer API contract (docs/openapi.yaml), for the app team's tooling. */
+const OPENAPI_FILE = fileURLToPath(new URL('../../docs/openapi.yaml', import.meta.url));
+router.get('/openapi.yaml', (_req, res) => {
+    res.type('application/yaml').sendFile(OPENAPI_FILE);
 });
 
 router.use('/auth', authRoutes);

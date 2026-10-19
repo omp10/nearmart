@@ -34,6 +34,9 @@ const staffSchema = new mongoose.Schema(
          */
         tokenVersion: { type: Number, default: 0 },
         lastLoginAt: { type: Date, default: null },
+        /** Consecutive wrong passwords; the account locks briefly after too many. */
+        failedLogins: { type: Number, default: 0 },
+        lockedUntil: { type: Date, default: null },
         createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Staff', default: null }
     },
     { collection: 'staff', timestamps: true }

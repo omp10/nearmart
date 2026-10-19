@@ -1,0 +1,1034 @@
+openapi: 3.1.0
+info:
+  title: Nearmart customer API
+  version: 1.0.0
+  description: |
+    The API the Nearmart customer app (Android & iOS) uses. Staff/admin endpoints
+    (`/admin/*`) are internal to the web panel and not listed here.
+
+    ## Conventions
+    - **Base URL:** `https://<api-host>/api/v1`
+    - **Envelope:** every success is `{ "success": true, "message": string, "data": … }`;
+      every error is `{ "success": false, "message": string, "code"?: string, "details"?: [{ path, message }], "requestId"?: string }`.
+      Show `message` to the user as-is; it is written for customers.
+    - **Money:** integers in **paise** (`pricePaise: 5950` = ₹59.50). Never compute totals on
+      the device; always show what `/checkout/quote` or the booking quote returns.
+    - **Dates:** instants are ISO-8601 UTC. Calendar dates (`YYYY-MM-DD`) and slot labels are
+      Indian Standard Time.
+    - **Ids:** 24-character hex strings.
+    - **Auth:** `Authorization: Bearer <accessToken>`. Access tokens last 15 minutes. On a 401,
+      call `POST /auth/refresh` once with the stored refresh token and retry; if that also fails,
+      sign the user out. Refresh tokens **rotate**: always store the new one. Signing in on another
+      device signs this one out (401 with a message saying so).
+    - **Pagination:** list endpoints take `page` (from 1) and `limit` (≤ 100) and return
+      `{ items, page, limit, total, pages }`.
+
+    ## Typical flows
+    1. **Sign in:** `POST /auth/customer/request-otp` → `POST /auth/customer/verify-otp` (send the FCM token as `device`).
+    2. **Location:** `POST /me/addresses` → each address carries `serviceableModules`; or `GET /serviceability`.
+    3. **Browse:** `GET /catalog/modules` → `/catalog/categories` → `/catalog/products`; `GET /banners`, `GET /settings`.
+    4. **Buy:** `PUT /cart/items` → `POST /checkout/quote` (per module) → `GET /slots?kind=delivery` → `POST /checkout`.
+       For `online`, open Razorpay Checkout with the returned `payment` and then call `POST /payments/razorpay/verify`.
+       The server also confirms through Razorpay webhooks, so show the order as pending until it reports `placed`.
+    5. **Laundry:** `GET /laundry/services` → `POST /laundry/bookings/quote` → `GET /slots?kind=pickup` → `POST /laundry/bookings`.
+       After weighing, the booking shows the final price; choose a return slot with `POST /laundry/bookings/{id}/return-slot`.
+
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local development
+  - url: https://api.example.com/api/v1
+    description: Production (replace with the real host)
+
+tags:
+  - name: Auth
+  - name: Profile
+  - name: Location
+  - name: Catalogue
+  - name: Cart & checkout
+  - name: Orders
+  - name: Laundry
+  - name: Payments
+  - name: Notifications
+  - name: Content
+
+security:
+  - bearer: []
+
+paths:
+  /auth/customer/request-otp:
+    post:
+      tags: [Auth]
+      summary: Send a sign-in OTP by SMS
+      description: Limited to 3 requests per 10 minutes per number (429 after that). In development the code is returned as `devOtp`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone: { type: string, example: '9876543210', description: Indian mobile; +91 / 0 prefixes and spaces accepted }
+      responses:
+        '200':
+          description: OTP sent
+          content: { application/json: { schema: { $ref: '#/components/schemas/Envelope', properties: { data: { type: object, properties: { devOtp: { type: string, description: development only } } } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooMany' }
+
+  /auth/customer/verify-otp:
+    post:
+      tags: [Auth]
+      summary: Verify the OTP and sign in (creates the account on first sign-in)
+      description: Each code works once; 5 wrong attempts lock it until a new one is requested.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, otp]
+              properties:
+                phone: { type: string, example: '9876543210' }
+                otp: { type: string, example: '482913' }
+                name: { type: string, maxLength: 80, description: Saved when the account has no name yet }
+                device: { $ref: '#/components/schemas/DeviceToken' }
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Session'
+                          - type: object
+                            properties:
+                              isNewUser: { type: boolean }
+                              needsName: { type: boolean, description: Ask for a name and save it with PATCH /me }
+                              user: { $ref: '#/components/schemas/Customer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: Account deactivated, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Exchange a refresh token for a new access token and refresh token
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [refreshToken], properties: { refreshToken: { type: string } } } } }
+      responses:
+        '200':
+          description: New session; replace both stored tokens
+          content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/Session' } } } ] } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the refresh token
+      description: Also call `DELETE /notifications/devices` first so the device stops getting pushes.
+      security: []
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { refreshToken: { type: string } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: The signed-in customer
+      responses:
+        '200': { description: Profile, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/Customer' } } } ] } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me:
+    patch:
+      tags: [Profile]
+      summary: Update name, email, photo or preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 80 }
+                email: { type: string, format: email, description: Empty string clears it }
+                profileImage: { type: string, description: URL from POST /uploads/image }
+                preferences: { type: object, properties: { notifications: { type: boolean } } }
+      responses:
+        '200': { description: Updated profile, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/Customer' } } } ] } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /me/addresses:
+    get:
+      tags: [Location]
+      summary: Saved addresses (with the modules that can serve each)
+      responses:
+        '200': { description: Addresses, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: array, items: { $ref: '#/components/schemas/Address' } } } } ] } } } }
+    post:
+      tags: [Location]
+      summary: Save an address (max 10; the first becomes default)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AddressInput' } } } }
+      responses:
+        '201': { description: Saved, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/Address' } } } ] } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /me/addresses/{addressId}:
+    parameters: [ { $ref: '#/components/parameters/AddressId' } ]
+    patch:
+      tags: [Location]
+      summary: Edit an address; `isDefault true` makes it the default; `lat`/`lng` null removes the map pin
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AddressInputPartial' } } } }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/Address' } } } ] } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Location]
+      summary: Remove an address (another becomes default)
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /serviceability:
+    get:
+      tags: [Location]
+      summary: Which modules can serve a location
+      security: []
+      parameters: [ { $ref: '#/components/parameters/Pincode' }, { $ref: '#/components/parameters/Lat' }, { $ref: '#/components/parameters/Lng' } ]
+      responses:
+        '200':
+          description: Result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { type: object, properties: { serviceable: { type: boolean }, modules: { type: array, items: { $ref: '#/components/schemas/ModuleKey' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /slots:
+    get:
+      tags: [Location]
+      summary: Upcoming delivery / pickup / return slots for a location
+      description: Slots past their cutoff are omitted; full ones are listed with `available false`. Pass the chosen `id` back at checkout.
+      security: []
+      parameters:
+        - { name: module, in: query, required: true, schema: { $ref: '#/components/schemas/ModuleKey' } }
+        - { name: kind, in: query, schema: { type: string, enum: [delivery, pickup, return], default: delivery } }
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 14, default: 3 } }
+        - { $ref: '#/components/parameters/Pincode' }
+        - { $ref: '#/components/parameters/Lat' }
+        - { $ref: '#/components/parameters/Lng' }
+      responses:
+        '200':
+          description: Slots by IST date
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          zone: { type: object, properties: { id: { type: string }, name: { type: string } } }
+                          days:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                date: { type: string, format: date }
+                                closed: { type: [string, 'null'], description: Reason when the whole day is closed }
+                                slots: { type: array, items: { $ref: '#/components/schemas/Slot' } }
+        '404': { description: Location not served for this module, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /catalog/modules:
+    get:
+      tags: [Catalogue]
+      summary: Modules open to customers (Grocery, Vegetables & Fresh Produce, Laundry, Electrical & Electronics)
+      security: []
+      responses:
+        '200':
+          description: Modules in display order
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { type: array, items: { type: object, properties: { key: { $ref: '#/components/schemas/ModuleKey' }, name: { type: string }, description: { type: string }, image: { type: string } } } } }
+
+  /catalog/categories:
+    get:
+      tags: [Catalogue]
+      summary: Category tree of a module (up to 3 levels)
+      security: []
+      parameters: [ { name: module, in: query, required: true, schema: { $ref: '#/components/schemas/ModuleKey' } } ]
+      responses:
+        '200': { description: Tree, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: array, items: { $ref: '#/components/schemas/Category' } } } } ] } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /catalog/products:
+    get:
+      tags: [Catalogue]
+      summary: Browse and search products
+      security: []
+      parameters:
+        - { name: module, in: query, schema: { type: string, enum: [grocery, produce, electronics] } }
+        - { name: category, in: query, description: Any level; includes subcategories, schema: { type: string } }
+        - { name: q, in: query, description: Matches the start of words in name, brand or keywords, schema: { type: string, maxLength: 100 } }
+        - { name: brand, in: query, schema: { type: string } }
+        - { name: minPrice, in: query, description: paise, schema: { type: integer } }
+        - { name: maxPrice, in: query, description: paise, schema: { type: integer } }
+        - { name: inStock, in: query, schema: { type: string, enum: ['true', 'false'] } }
+        - { name: featured, in: query, schema: { type: string, enum: ['true', 'false'] } }
+        - { name: sort, in: query, schema: { type: string, enum: [relevance, price_asc, price_desc, newest, name], default: relevance } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Page of products, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { allOf: [ { $ref: '#/components/schemas/PageMeta' }, { properties: { items: { type: array, items: { $ref: '#/components/schemas/ProductSummary' } } } } ] } } } ] } } } }
+
+  /catalog/products/{idOrSlug}:
+    get:
+      tags: [Catalogue]
+      summary: Product detail
+      security: []
+      parameters: [ { name: idOrSlug, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: Product, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/ProductDetail' } } } ] } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /catalog/brands:
+    get:
+      tags: [Catalogue]
+      summary: Brands, for the filter sheet
+      security: []
+      parameters: [ { name: module, in: query, schema: { $ref: '#/components/schemas/ModuleKey' } } ]
+      responses:
+        '200': { description: Brand names, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: array, items: { type: string } } } } ] } } } }
+
+  /cart:
+    get:
+      tags: [Cart & checkout]
+      summary: The cart, grouped by module
+      description: Prices are live. A line that can't be bought has an `issue`; checkout of that module is refused until it is fixed.
+      responses:
+        '200': { $ref: '#/components/responses/Cart' }
+    delete:
+      tags: [Cart & checkout]
+      summary: Empty the cart, or one module's part of it
+      parameters: [ { name: module, in: query, schema: { $ref: '#/components/schemas/ModuleKey' } } ]
+      responses:
+        '200': { $ref: '#/components/responses/Cart' }
+
+  /cart/items:
+    put:
+      tags: [Cart & checkout]
+      summary: Set the quantity of a product variant (0 removes it)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId, variantId, qty]
+              properties:
+                productId: { type: string }
+                variantId: { type: string }
+                qty: { type: integer, minimum: 0, maximum: 99, description: Must not exceed the variant's maxQty }
+      responses:
+        '200': { $ref: '#/components/responses/Cart' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /checkout/quote:
+    post:
+      tags: [Cart & checkout]
+      summary: Price one module's cart for an address (and optional coupon); changes nothing
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/QuoteInput' } } } }
+      responses:
+        '200':
+          description: Quote
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          lines: { type: array, items: { $ref: '#/components/schemas/CartLine' } }
+                          pricing: { $ref: '#/components/schemas/Pricing' }
+                          slotRequired: { type: boolean, description: If true, slotId is required at checkout }
+                          zone: { type: object, properties: { id: { type: string }, name: { type: string }, minOrderPaise: { type: [integer, 'null'] }, freeDeliveryAbovePaise: { type: [integer, 'null'] } } }
+                          coupon: { type: [object, 'null'], properties: { code: { type: string }, description: { type: string } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/CartIssues' }
+
+  /checkout:
+    post:
+      tags: [Cart & checkout]
+      summary: Place an order for one module's cart lines
+      description: |
+        Cash orders are `placed` at once. Online orders start as `pending_payment`, return Razorpay
+        details in `payment`, and are cancelled automatically if unpaid after 15 minutes.
+        Ordered lines leave the cart; other modules' lines stay.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/QuoteInput'
+                - type: object
+                  required: [paymentMethod]
+                  properties:
+                    slotId: { type: string, description: From GET /slots (kind=delivery) }
+                    paymentMethod: { type: string, enum: [cod, online] }
+                    notes: { type: string, maxLength: 500 }
+      responses:
+        '201':
+          description: Order created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { type: object, properties: { order: { $ref: '#/components/schemas/Order' }, payment: { oneOf: [ { $ref: '#/components/schemas/GatewayPayment' }, { type: 'null' } ] } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/CartIssues' }
+
+  /orders:
+    get:
+      tags: [Orders]
+      summary: Order history
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, past] } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Page of orders (summary fields), content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { allOf: [ { $ref: '#/components/schemas/PageMeta' }, { properties: { items: { type: array, items: { $ref: '#/components/schemas/Order' } } } } ] } } } ] } } } }
+
+  /orders/{id}:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    get:
+      tags: [Orders]
+      summary: Order detail with status timeline
+      responses:
+        '200': { description: Order, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/Order' } } } ] } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /orders/{id}/payment:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    get:
+      tags: [Orders]
+      summary: Razorpay details to (re)try paying a pending order
+      responses:
+        '200': { description: Payment details, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/GatewayPayment' } } } ] } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /orders/{id}/cancel:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    post:
+      tags: [Orders]
+      summary: Cancel (allowed until the store starts packing); online payments are refunded
+      requestBody: { content: { application/json: { schema: { type: object, properties: { reason: { type: string, maxLength: 200 } } } } } }
+      responses:
+        '200': { description: Cancelled order, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/Order' } } } ] } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /orders/{id}/reorder:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    post:
+      tags: [Orders]
+      summary: Put what is still available from a past order back in the cart
+      responses:
+        '200':
+          description: Lines that couldn't be added in full
+          content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, properties: { skipped: { type: array, items: { type: object, properties: { name: { type: string }, variantLabel: { type: string }, reason: { type: string, enum: [unavailable, quantity_reduced] } } } } } } } } ] } } }
+
+  /laundry/services:
+    get:
+      tags: [Laundry]
+      summary: Laundry price chart
+      security: []
+      responses:
+        '200': { description: Services, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: array, items: { $ref: '#/components/schemas/LaundryService' } } } } ] } } } }
+
+  /laundry/bookings/quote:
+    post:
+      tags: [Laundry]
+      summary: Estimate a booking (final price is set after weighing)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BookingQuoteInput' } } } }
+      responses:
+        '200':
+          description: Estimate
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { type: object, properties: { lines: { type: array, items: { $ref: '#/components/schemas/BookingLine' } }, pricing: { $ref: '#/components/schemas/BookingPricing' }, zone: { type: object, properties: { id: { type: string }, name: { type: string } } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /laundry/bookings:
+    get:
+      tags: [Laundry]
+      summary: Booking history
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, past] } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Page of bookings, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { allOf: [ { $ref: '#/components/schemas/PageMeta' }, { properties: { items: { type: array, items: { $ref: '#/components/schemas/Booking' } } } } ] } } } ] } } } }
+    post:
+      tags: [Laundry]
+      summary: Book a pickup
+      description: Cash bookings pay the final amount at return. Online bookings prepay the estimate; any difference after weighing is refunded or collected at return.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BookingQuoteInput'
+                - type: object
+                  required: [pickupSlotId, paymentMethod]
+                  properties:
+                    pickupSlotId: { type: string, description: From GET /slots?module=laundry&kind=pickup }
+                    instructions: { type: string, maxLength: 500, description: Care instructions }
+                    pickupNotes: { type: string, maxLength: 300 }
+                    paymentMethod: { type: string, enum: [cod, online] }
+      responses:
+        '201':
+          description: Booking created
+          content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, properties: { booking: { $ref: '#/components/schemas/Booking' }, payment: { oneOf: [ { $ref: '#/components/schemas/GatewayPayment' }, { type: 'null' } ] } } } } } ] } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /laundry/bookings/{id}:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    get:
+      tags: [Laundry]
+      summary: Booking detail
+      responses:
+        '200': { description: Booking, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/Booking' } } } ] } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /laundry/bookings/{id}/payment:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    get:
+      tags: [Laundry]
+      summary: Razorpay details to (re)try paying a pending booking
+      responses:
+        '200': { description: Payment details, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/GatewayPayment' } } } ] } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /laundry/bookings/{id}/cancel:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    post:
+      tags: [Laundry]
+      summary: Cancel before pickup
+      requestBody: { content: { application/json: { schema: { type: object, properties: { reason: { type: string, maxLength: 200 } } } } } }
+      responses:
+        '200': { description: Cancelled booking, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/Booking' } } } ] } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /laundry/bookings/{id}/return-slot:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    post:
+      tags: [Laundry]
+      summary: Choose or change the return slot (after weighing, before the return trip)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [slotId], properties: { slotId: { type: string, description: From GET /slots?module=laundry&kind=return } } } } } }
+      responses:
+        '200': { description: Booking with returnSlot, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/Booking' } } } ] } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /payments/razorpay/verify:
+    post:
+      tags: [Payments]
+      summary: Report a successful Razorpay Checkout
+      description: Send the three values Razorpay Checkout returns. The server checks the signature and amount with Razorpay. The webhook also confirms the payment, so a failed call here does not lose it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [razorpay_order_id, razorpay_payment_id, razorpay_signature]
+              properties:
+                razorpay_order_id: { type: string }
+                razorpay_payment_id: { type: string }
+                razorpay_signature: { type: string }
+      responses:
+        '200': { description: Verified, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, properties: { paymentId: { type: string }, status: { type: string } } } } } ] } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: In-app notification inbox
+      parameters: [ { $ref: '#/components/parameters/Page' }, { $ref: '#/components/parameters/Limit' } ]
+      responses:
+        '200':
+          description: Inbox
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/PageMeta'
+                          - properties:
+                              unread: { type: integer }
+                              items: { type: array, items: { $ref: '#/components/schemas/Notification' } }
+
+  /notifications/{id}/read:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    post:
+      tags: [Notifications]
+      summary: Mark one notification read
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Mark all read
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /notifications/devices:
+    post:
+      tags: [Notifications]
+      summary: Register this device's FCM token (after sign-in and whenever FCM rotates it)
+      description: A customer keeps one device; registering a new token drops the old one.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DeviceToken' } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+    delete:
+      tags: [Notifications]
+      summary: Remove this device's token (call before sign-out)
+      requestBody: { content: { application/json: { schema: { type: object, properties: { token: { type: string, description: Omit to remove all of the account's devices } } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /uploads/image:
+    post:
+      tags: [Profile]
+      summary: Upload a profile photo (JPEG, PNG, WebP or GIF, up to 5 MB); returns its URL for PATCH /me
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        '201': { description: Uploaded, content: { application/json: { schema: { allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, properties: { url: { type: string }, path: { type: string }, mimeType: { type: string }, size: { type: integer } } } } } ] } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '413': { description: File too large, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /banners:
+    get:
+      tags: [Content]
+      summary: Live promotional banners
+      security: []
+      parameters: [ { name: placement, in: query, schema: { type: string, enum: [home, grocery, produce, laundry, electronics], default: home } } ]
+      responses:
+        '200':
+          description: Banners in display order
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: string }
+                            title: { type: string, description: Use as alt text }
+                            image: { type: string }
+                            link: { type: object, properties: { type: { type: string, enum: [none, module, category, product, url] }, value: { type: string } } }
+
+  /settings:
+    get:
+      tags: [Content]
+      summary: Contact details, policy texts, payment options and whether orders are open
+      security: []
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          contact: { type: object, properties: { phone: { type: string }, whatsapp: { type: string }, email: { type: string }, address: { type: string }, supportHours: { type: string } } }
+                          policies: { type: object, properties: { terms: { type: string }, privacy: { type: string }, refund: { type: string }, cancellation: { type: string }, delivery: { type: string } } }
+                          payments: { type: object, properties: { cod: { type: boolean }, online: { type: boolean }, codMaxOrderPaise: { type: [integer, 'null'] } } }
+                          acceptingOrders: { type: boolean }
+                          pausedMessage: { type: string, description: Show instead of checkout when acceptingOrders is false }
+
+  /health:
+    get:
+      tags: [Content]
+      summary: Liveness check
+      security: []
+      responses:
+        '200': { description: Up }
+        '503': { description: Database unavailable }
+
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string } }
+    AddressId: { name: addressId, in: path, required: true, schema: { type: string } }
+    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    Pincode: { name: pincode, in: query, description: 6 digits; give a pincode, a lat/lng, or both, schema: { type: string, pattern: '^\d{6}$' } }
+    Lat: { name: lat, in: query, schema: { type: number } }
+    Lng: { name: lng, in: query, schema: { type: number } }
+
+  responses:
+    Ok: { description: Done, content: { application/json: { schema: { $ref: '#/components/schemas/Envelope' } } } }
+    BadRequest: { description: Invalid input or not allowed right now (message explains), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Unauthorized: { description: Not signed in, token expired, or signed in elsewhere, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    NotFound: { description: Not found (or not yours), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Conflict: { description: Not possible in the current state (message explains), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    TooMany: { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    CartIssues:
+      description: Some cart lines can't be bought; `details` lists them so the app can highlight each
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Error'
+              - properties:
+                  details:
+                    type: array
+                    items: { type: object, properties: { productId: { type: string }, variantId: { type: string }, name: { type: string }, issue: { type: string, enum: [unavailable, out_of_stock, quantity_reduced] }, maxQty: { type: integer } } }
+    Cart:
+      description: Cart
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - properties:
+                  data:
+                    type: object
+                    properties:
+                      itemCount: { type: integer }
+                      groups:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            module: { type: string }
+                            subtotalPaise: { type: integer }
+                            itemCount: { type: integer }
+                            hasIssues: { type: boolean }
+                            lines: { type: array, items: { $ref: '#/components/schemas/CartLine' } }
+
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        success: { type: boolean, const: true }
+        message: { type: string }
+        data: {}
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, const: false }
+        message: { type: string }
+        code: { type: string, description: 'Machine-readable reason where useful, e.g. REFRESH_RACE' }
+        details: { type: array, items: { type: object } }
+        requestId: { type: string }
+    PageMeta:
+      type: object
+      properties: { page: { type: integer }, limit: { type: integer }, total: { type: integer }, pages: { type: integer } }
+    ModuleKey: { type: string, enum: [grocery, produce, laundry, electronics] }
+    Session:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: integer, description: Access token lifetime in seconds }
+    DeviceToken:
+      type: object
+      required: [token, platform]
+      properties:
+        token: { type: string, description: FCM registration token }
+        platform: { type: string, enum: [android, ios, web] }
+    Customer:
+      type: object
+      properties:
+        id: { type: string }
+        phone: { type: string }
+        name: { type: string }
+        email: { type: string }
+        profileImage: { type: string }
+        addresses: { type: array, items: { $ref: '#/components/schemas/Address' } }
+        preferences: { type: object, properties: { notifications: { type: boolean } } }
+    AddressInput:
+      type: object
+      required: [line1, city, state, pincode]
+      properties:
+        label: { type: string, enum: [home, work, other] }
+        name: { type: string }
+        phone: { type: string, description: Contact for delivery if different from the account }
+        line1: { type: string }
+        line2: { type: string }
+        landmark: { type: string }
+        city: { type: string }
+        state: { type: string }
+        pincode: { type: string, pattern: '^\d{6}$' }
+        lat: { type: [number, 'null'], description: Send together with lng (map pin) }
+        lng: { type: [number, 'null'] }
+        isDefault: { type: boolean }
+    AddressInputPartial:
+      allOf: [ { $ref: '#/components/schemas/AddressInput' } ]
+      description: Same fields as AddressInput, all optional
+    Address:
+      allOf:
+        - $ref: '#/components/schemas/AddressInput'
+        - type: object
+          properties:
+            _id: { type: string }
+            location: { type: object, properties: { type: { const: Point }, coordinates: { type: array, items: { type: number }, description: '[lng, lat]' } } }
+            serviceableModules: { type: array, items: { $ref: '#/components/schemas/ModuleKey' } }
+    Slot:
+      type: object
+      properties:
+        id: { type: string, description: Pass back at checkout/booking }
+        date: { type: string, format: date }
+        start: { type: string, format: date-time }
+        end: { type: string, format: date-time }
+        label: { type: string, example: '09:00–12:00' }
+        orderBy: { type: string, format: date-time, description: Booking for this slot closes at this time }
+        available: { type: boolean }
+    Category:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        image: { type: string }
+        description: { type: string }
+        children: { type: array, items: { $ref: '#/components/schemas/Category' } }
+    Variant:
+      type: object
+      properties:
+        id: { type: string }
+        sku: { type: [string, 'null'] }
+        label: { type: string, example: '1 kg' }
+        options: { type: object, additionalProperties: { type: string }, example: { colour: Black } }
+        unit: { type: string, enum: [kg, g, l, ml, piece, pack, bunch, dozen, box] }
+        unitQty: { type: number }
+        pricePaise: { type: integer, description: Selling price (show struck through when an offer applies) }
+        offerPricePaise: { type: [integer, 'null'] }
+        effectivePricePaise: { type: integer, description: What the customer pays }
+        inStock: { type: boolean }
+        maxQty: { type: integer, description: Most that can be added to the cart now }
+    ProductSummary:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        module: { type: string }
+        category: { type: string }
+        name: { type: string }
+        brand: { type: string }
+        image: { type: [string, 'null'] }
+        minPricePaise: { type: integer }
+        inStock: { type: boolean }
+        isFeatured: { type: boolean }
+        variants: { type: array, items: { $ref: '#/components/schemas/Variant' } }
+    ProductDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProductSummary'
+        - type: object
+          properties:
+            images: { type: array, items: { type: string } }
+            description: { type: string }
+            modelNumber: { type: string }
+            specifications: { type: array, items: { type: object, properties: { key: { type: string }, value: { type: string } } } }
+            warranty: { type: string }
+            returnPolicy: { type: string }
+            availabilityNote: { type: string }
+            handlingNote: { type: string }
+            tags: { type: array, items: { type: string } }
+            categoryPath: { type: array, items: { type: string } }
+    CartLine:
+      type: object
+      properties:
+        productId: { type: string }
+        variantId: { type: string }
+        qty: { type: integer }
+        module: { type: [string, 'null'] }
+        name: { type: string }
+        brand: { type: string }
+        image: { type: [string, 'null'] }
+        variantLabel: { type: string }
+        mrpPaise: { type: integer }
+        unitPricePaise: { type: integer }
+        lineTotalPaise: { type: integer }
+        maxQty: { type: integer }
+        issue: { type: [string, 'null'], enum: [unavailable, out_of_stock, quantity_reduced, null] }
+    QuoteInput:
+      type: object
+      required: [module, addressId]
+      properties:
+        module: { type: string, enum: [grocery, produce, electronics] }
+        addressId: { type: string }
+        couponCode: { type: string }
+    Pricing:
+      type: object
+      properties:
+        subtotalPaise: { type: integer }
+        discountPaise: { type: integer }
+        deliveryFeePaise: { type: integer }
+        taxPaise: { type: integer, description: GST included in the prices (informational) }
+        totalPaise: { type: integer }
+        savingsPaise: { type: integer, description: Saved against MRP plus the coupon }
+    GatewayPayment:
+      type: object
+      description: Options for Razorpay Checkout (key, order_id, amount, currency)
+      properties:
+        paymentId: { type: string }
+        keyId: { type: string }
+        gatewayOrderId: { type: string }
+        amountPaise: { type: integer }
+        currency: { type: string, const: INR }
+        payBy: { type: string, format: date-time }
+    OrderStatus:
+      type: string
+      enum: [pending_payment, placed, accepted, packing, ready, dispatched, delivered, cancelled]
+    Order:
+      type: object
+      properties:
+        _id: { type: string }
+        orderNumber: { type: string, example: NM261019A1B2C3 }
+        module: { type: string }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              _id: { type: string }
+              name: { type: string }
+              variantLabel: { type: string }
+              image: { type: [string, 'null'] }
+              qty: { type: integer }
+              unitPricePaise: { type: integer }
+              lineTotalPaise: { type: integer }
+              status: { type: string, enum: [ok, unavailable], description: unavailable = the store couldn't supply it; not charged }
+        address: { type: object }
+        slot: { type: object, properties: { id: { type: string }, date: { type: string }, label: { type: string } } }
+        pricing: { $ref: '#/components/schemas/Pricing' }
+        originalTotalPaise: { type: integer, description: Total at checkout, before unavailable items were removed }
+        coupon: { type: object, properties: { code: { type: string }, discountPaise: { type: integer } } }
+        payment:
+          type: object
+          properties:
+            method: { type: string, enum: [cod, online] }
+            status: { type: string, enum: [pending, paid, failed, refund_pending, refunded, partially_refunded] }
+            refundPendingPaise: { type: integer }
+        statusHistory: { type: array, items: { type: object, properties: { status: { type: string }, at: { type: string, format: date-time }, note: { type: string } } } }
+        cancelReason: { type: string }
+        paymentDueBy: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    LaundryService:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, example: Wash & Fold }
+        slug: { type: string }
+        description: { type: string }
+        image: { type: string }
+        pricingUnit: { type: string, enum: [kg, piece] }
+        ratePaise: { type: integer, description: Per kg or per piece }
+        minQty: { type: number, description: Billed at least this much }
+        turnaroundHours: { type: integer }
+    BookingQuoteInput:
+      type: object
+      required: [addressId, items]
+      properties:
+        addressId: { type: string }
+        items:
+          type: array
+          minItems: 1
+          items: { type: object, required: [serviceId, estimatedQty], properties: { serviceId: { type: string }, estimatedQty: { type: number, description: kg or pieces } } }
+    BookingLine:
+      type: object
+      properties:
+        _id: { type: string }
+        name: { type: string }
+        pricingUnit: { type: string, enum: [kg, piece] }
+        ratePaise: { type: integer }
+        minQty: { type: number }
+        estimatedQty: { type: number }
+        estimatePaise: { type: integer }
+        finalQty: { type: [number, 'null'], description: Set after weighing }
+        finalPaise: { type: [integer, 'null'] }
+    BookingPricing:
+      type: object
+      properties:
+        estimatePaise: { type: integer }
+        deliveryFeePaise: { type: integer }
+        finalPaise: { type: [integer, 'null'] }
+        totalPaise: { type: integer, description: Final once weighed, otherwise estimate + fee }
+        taxPaise: { type: integer }
+    Booking:
+      type: object
+      properties:
+        _id: { type: string }
+        bookingNumber: { type: string, example: NL261019A1B2C3 }
+        status: { type: string, enum: [pending_payment, placed, pickup_scheduled, picked_up, weighed, processing, ready, out_for_return, completed, cancelled] }
+        items: { type: array, items: { $ref: '#/components/schemas/BookingLine' } }
+        pickupSlot: { $ref: '#/components/schemas/Slot' }
+        returnSlot: { $ref: '#/components/schemas/Slot' }
+        instructions: { type: string }
+        pickupNotes: { type: string }
+        pricing: { $ref: '#/components/schemas/BookingPricing' }
+        payment:
+          type: object
+          properties:
+            method: { type: string, enum: [cod, online] }
+            status: { type: string }
+            paidPaise: { type: integer }
+            balanceDuePaise: { type: integer, description: To pay at return }
+            refundPendingPaise: { type: integer }
+        statusHistory: { type: array, items: { type: object } }
+        createdAt: { type: string, format: date-time }
+    Notification:
+      type: object
+      properties:
+        _id: { type: string }
+        title: { type: string }
+        body: { type: string }
+        type: { type: string, description: 'e.g. order.dispatched, booking.weighed: route the tap on this' }
+        data: { type: object, additionalProperties: { type: string }, description: 'orderId or bookingId' }
+        readAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }

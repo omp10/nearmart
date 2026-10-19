@@ -25,7 +25,9 @@ export const createApp = () => {
         pinoHttp({
             logger,
             genReqId: (req, res) => {
-                const id = req.headers['x-request-id'] || crypto.randomUUID();
+                // Reuse nginx's id when it is well-formed; it ends up in logs and responses.
+                const incoming = req.headers['x-request-id'];
+                const id = typeof incoming === 'string' && /^[\w-]{1,64}$/.test(incoming) ? incoming : crypto.randomUUID();
                 res.setHeader('x-request-id', id);
                 return id;
             },

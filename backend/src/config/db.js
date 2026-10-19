@@ -3,6 +3,8 @@ import { env } from './env.js';
 import { logger } from '../lib/logger.js';
 
 mongoose.set('strictQuery', true);
+// In production indexes are built by `npm run db:indexes`, not on first use.
+mongoose.set('autoIndex', !env.isProduction);
 
 export const connectDB = async (uri = env.MONGO_URI) => {
     const conn = await mongoose.connect(uri);

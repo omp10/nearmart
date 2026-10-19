@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
+import { ForbiddenError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 import { ok } from '../../lib/response.js';
 import { normalizeIndianPhone, validate } from '../../lib/validate.js';
@@ -75,10 +76,24 @@ router.post(
     }
 );
 
+/**
+ * CSRF guard for the cookie-carrying endpoints. Browsers send Origin on
+ * POSTs; when one is present it must be this site or an allowed panel
+ * origin. The mobile app sends no Origin (and no cookie), so it's unaffected.
+ */
+const trustedOrigin = (req, _res, next) => {
+    const origin = req.get('origin');
+    if (!origin) return next();
+    const self = `${req.protocol}://${req.get('host')}`;
+    if (origin === self || env.CORS_ORIGINS.includes(origin)) return next();
+    return next(new ForbiddenError('Request from an untrusted site'));
+};
+
 // ─── Staff login (admin / ops panel) ───
 
 router.post(
     '/staff/login',
+    trustedOrigin,
     authLimiter,
     validate(z.object({ email: z.string().trim().email(), password: z.string().min(1).max(200) })),
     async (req, res) => {
@@ -107,7 +122,7 @@ router.post(
 
 // ─── Shared ───
 
-router.post('/refresh', validate(z.object({ refreshToken: z.string().optional() })), async (req, res) => {
+router.post('/refresh', trustedOrigin, validate(z.object({ refreshToken: z.string().optional() })), async (req, res) => {
     const fromCookie = req.cookies?.[REFRESH_COOKIE];
     const { kind, refreshToken, ...session } = await auth.refreshSession(
         req.body.refreshToken || fromCookie,
@@ -120,7 +135,7 @@ router.post('/refresh', validate(z.object({ refreshToken: z.string().optional() 
     return ok(res, { ...session, refreshToken }, 'Session refreshed');
 });
 
-router.post('/logout', validate(z.object({ refreshToken: z.string().optional() })), async (req, res) => {
+router.post('/logout', trustedOrigin, validate(z.object({ refreshToken: z.string().optional() })), async (req, res) => {
     await auth.logout(req.body.refreshToken || req.cookies?.[REFRESH_COOKIE]);
     res.clearCookie(REFRESH_COOKIE, { ...cookieOptions(), maxAge: undefined });
     ok(res, null, 'Signed out');

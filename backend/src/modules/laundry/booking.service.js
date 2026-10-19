@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import { env } from '../../config/env.js';
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../lib/errors.js';
+import { ConflictError, ForbiddenError, NotFoundError, TooManyRequestsError, ValidationError } from '../../lib/errors.js';
 import { istDate } from '../../lib/istTime.js';
 import { logger } from '../../lib/logger.js';
 import { formatRupees, includedTax } from '../../lib/money.js';
@@ -117,6 +117,13 @@ export const createBooking = async (userId, { addressId, items, pickupSlotId, in
     const { address, zone, lines, pricing } = await quoteBooking(userId, { addressId, items });
     if (paymentMethod === 'online' && pricing.totalPaise < 100) throw new ValidationError('Online payment needs a total of at least ₹1');
     await assertCheckoutAllowed({ paymentMethod, totalPaise: pricing.totalPaise });
+    // Bookings hold pickup capacity; cap what one account can hold (see orders).
+    const [unpaid, active] = await Promise.all([
+        LaundryBooking.countDocuments({ user: userId, status: 'pending_payment' }),
+        LaundryBooking.countDocuments({ user: userId, status: { $in: ['placed', 'pickup_scheduled'] } })
+    ]);
+    if (unpaid >= 3) throw new TooManyRequestsError('Please pay for or cancel your pending bookings first');
+    if (active >= 5) throw new TooManyRequestsError('You already have several pickups booked. Please wait for them first.');
 
     const user = await User.findById(userId).select('phone').lean();
     const bookingId = new mongoose.Types.ObjectId();

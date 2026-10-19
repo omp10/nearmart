@@ -53,3 +53,20 @@ const redemptionSchema = new mongoose.Schema(
 redemptionSchema.index({ coupon: 1, user: 1 });
 
 export const CouponRedemption = mongoose.model('CouponRedemption', redemptionSchema);
+
+/**
+ * Uses per (coupon, customer). The per-customer limit is enforced by a
+ * conditional increment on this row, so parallel checkouts can't each pass a
+ * read-then-write check.
+ */
+const usageSchema = new mongoose.Schema(
+    {
+        coupon: { type: mongoose.Schema.Types.ObjectId, required: true },
+        user: { type: mongoose.Schema.Types.ObjectId, required: true },
+        count: { type: Number, default: 0, min: 0 }
+    },
+    { collection: 'coupon_usage' }
+);
+usageSchema.index({ coupon: 1, user: 1 }, { unique: true });
+
+export const CouponUsage = mongoose.model('CouponUsage', usageSchema);
