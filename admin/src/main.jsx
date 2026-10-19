@@ -4,7 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { AuthProvider, useAuth } from './auth/AuthProvider.jsx';
 import AppLayout from './layout/AppLayout.jsx';
+import Banners from './pages/Banners.jsx';
 import BookingDetail from './pages/BookingDetail.jsx';
+import { CustomerDetail, Customers } from './pages/Customers.jsx';
+import Reports from './pages/Reports.jsx';
+import Settings from './pages/Settings.jsx';
 import Bookings from './pages/Bookings.jsx';
 import Categories from './pages/Categories.jsx';
 import LaundryServices from './pages/LaundryServices.jsx';
@@ -72,6 +76,11 @@ createRoot(document.getElementById('root')).render(
                             <Route path="bookings" element={<RequirePermission section="bookings"><Bookings /></RequirePermission>} />
                             <Route path="bookings/:id" element={<RequirePermission section="bookings"><BookingDetail /></RequirePermission>} />
                             <Route path="laundry-services" element={<RequirePermission section="catalog"><LaundryServices /></RequirePermission>} />
+                            <Route path="customers" element={<RequirePermission section="customers"><Customers /></RequirePermission>} />
+                            <Route path="customers/:id" element={<RequirePermission section="customers"><CustomerDetail /></RequirePermission>} />
+                            <Route path="banners" element={<RequirePermission section="banners"><Banners /></RequirePermission>} />
+                            <Route path="reports" element={<RequirePermission section="reports"><Reports /></RequirePermission>} />
+                            <Route path="settings" element={<RequirePermission section="settings"><Settings /></RequirePermission>} />
                             <Route path="coupons" element={<RequirePermission section="coupons"><Coupons /></RequirePermission>} />
                             <Route path="zones" element={<RequirePermission section="zones"><Zones /></RequirePermission>} />
                             <Route path="slots" element={<RequirePermission section="zones"><Slots /></RequirePermission>} />

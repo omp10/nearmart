@@ -108,6 +108,19 @@ final amount at return. Prepaid bookings are refunded the difference automatical
 lower, or pay the balance in cash at return if it is higher. Completing the return records the
 balance as collected.
 
+### Dashboard, reports, settings, banners, customers (Phase 5)
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `GET /admin/dashboard` | panel | today and 7-day orders/value (IST days, orders + laundry), open orders, laundry to weigh, low stock, catalogue and customer counts; limited to an ops user's modules |
+| `GET /admin/reports/:type?from&to&module&format=json\|csv\|xlsx` | panel (`reports`) | `orders`, `sales`, `category-orders`, `availability`, `bookings`; inclusive IST dates, max 366 days, 50k rows |
+| `GET /settings`, `/admin/settings` | app / admin | contact, policy texts, cash/online switches, cash limit, pause-all-orders with message; enforced at checkout and booking |
+| `GET /banners?placement=`, `/admin/banners` | app / admin | home or module page; tap opens a module, category, product or https URL; scheduled start/end |
+| `/admin/customers` | admin | search, order count and spend, history, addresses; deactivating signs the customer out at once |
+
+CSV exports start with a UTF-8 BOM (for Excel) and neutralise cells beginning with `= + - @`
+(spreadsheet formula injection). Money columns are rupees in exports and paise in JSON.
+
 Stock only changes through the inventory endpoints (and orders, from Phase 3). Each change is an
 atomic conditional update, so stock can't go negative under concurrent orders. Editing a product never
 touches existing variants' stock. A stock change bumps the product's version, so a product form saved
@@ -152,7 +165,7 @@ known problems were fixed:
 | **2 (done)** | §2, §5, §7 | service areas (pincodes and/or polygon), customer profile & addresses, serviceability, delivery/pickup/return slots with capacity, closed dates | service areas (with location checker), slots (rules, 7-day preview, closed dates) |
 | **3 (done)** | §2, §3, §4, §6 | cart, per-module checkout with server-side pricing & GST, COD + Razorpay, coupons, order status flow, unavailable items with partial refunds, unpaid-order expiry, reorder | orders board, order detail (advance / cancel / unavailable / retry refund), coupons, GST on products |
 | **4 (done)** | §5 | laundry price chart (per kg / per piece, minimums), pickup & return slots, bookings, weighing with final price, refunds or balance due, unpaid-booking expiry | laundry services, bookings board, booking detail (weigh with live preview, schedule return, advance, cancel) |
-| 5 | §7, §8 | dashboard counts, reports + CSV/XLSX export, settings (contact, policies), banners, ops panel views scoped to the user's modules | dashboard, reports, settings, banners |
+| **5 (done)** | §7, §8 | dashboard counts, 5 reports with CSV/XLSX export, settings enforced at checkout, banners, customer management; ops users see only their modules throughout | dashboard (7-day chart), reports, settings, banners, customers |
 | 6 | §10 | OpenAPI spec for the app team, load/UAT fixes, deployment | — |
 
 Open decisions to confirm with the client before Phases 2–4 (SOW §11): vendor vs. internal ops,

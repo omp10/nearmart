@@ -11,6 +11,7 @@ import { getAddress } from '../customers/customer.service.js';
 import { notify } from '../notifications/notification.service.js';
 import { Payment } from '../payments/payment.model.js';
 import { createGatewayPayment, initiateRefund, paymentEvents } from '../payments/payment.service.js';
+import { assertCheckoutAllowed } from '../settings/settings.service.js';
 import { releaseSlot, reserveSlot } from '../slots/slot.service.js';
 import { User } from '../users/user.model.js';
 import { zoneForAddress } from '../zones/zone.service.js';
@@ -115,6 +116,7 @@ export const createBooking = async (userId, { addressId, items, pickupSlotId, in
     if (paymentMethod === 'online' && !env.razorpayEnabled) throw new ValidationError('Online payment is not available right now');
     const { address, zone, lines, pricing } = await quoteBooking(userId, { addressId, items });
     if (paymentMethod === 'online' && pricing.totalPaise < 100) throw new ValidationError('Online payment needs a total of at least ₹1');
+    await assertCheckoutAllowed({ paymentMethod, totalPaise: pricing.totalPaise });
 
     const user = await User.findById(userId).select('phone').lean();
     const bookingId = new mongoose.Types.ObjectId();

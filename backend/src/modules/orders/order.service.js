@@ -13,6 +13,7 @@ import { getAddress } from '../customers/customer.service.js';
 import { notify } from '../notifications/notification.service.js';
 import { Payment } from '../payments/payment.model.js';
 import { createGatewayPayment, initiateRefund, paymentEvents } from '../payments/payment.service.js';
+import { assertCheckoutAllowed } from '../settings/settings.service.js';
 import { SlotRule } from '../slots/slot.model.js';
 import { releaseSlot, reserveSlot } from '../slots/slot.service.js';
 import { User } from '../users/user.model.js';
@@ -98,6 +99,7 @@ export const placeOrder = async (userId, { module, addressId, slotId, couponCode
     if (paymentMethod === 'online' && !env.razorpayEnabled) throw new ValidationError('Online payment is not available right now');
 
     const { address, zone, lines, coupon, slotRequired, pricing } = await quote(userId, { module, addressId, couponCode });
+    await assertCheckoutAllowed({ paymentMethod, totalPaise: pricing.totalPaise });
     if (slotRequired && !slotId) throw new ValidationError('Please choose a delivery slot');
     if (paymentMethod === 'online' && pricing.totalPaise < 100) throw new ValidationError('Online payment needs a total of at least ₹1');
 

@@ -11,13 +11,13 @@ export const NAV_ITEMS = [
     { to: '/orders', label: 'Orders', section: 'orders', ready: true },
     { to: '/bookings', label: 'Laundry bookings', section: 'bookings', ready: true },
     { to: '/laundry-services', label: 'Laundry services', section: 'catalog', ready: true },
-    { to: '/customers', label: 'Customers', section: 'customers', ready: false },
+    { to: '/customers', label: 'Customers', section: 'customers', ready: true },
     { to: '/zones', label: 'Service areas', section: 'zones', ready: true },
     { to: '/slots', label: 'Slots', section: 'zones', ready: true },
-    { to: '/banners', label: 'Banners', section: 'banners', ready: false },
+    { to: '/banners', label: 'Banners', section: 'banners', ready: true },
     { to: '/coupons', label: 'Coupons', section: 'coupons', ready: true },
-    { to: '/reports', label: 'Reports', section: 'reports', ready: false },
-    { to: '/settings', label: 'Settings', section: 'settings', ready: false },
+    { to: '/reports', label: 'Reports', section: 'reports', ready: true },
+    { to: '/settings', label: 'Settings', section: 'settings', ready: true },
     { to: '/staff', label: 'Staff & roles', section: 'staff', ready: true }
 ];
 
