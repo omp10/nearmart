@@ -11,8 +11,9 @@ const addressSchema = new mongoose.Schema(
         city: { type: String, required: true, trim: true },
         state: { type: String, required: true, trim: true },
         pincode: { type: String, required: true, trim: true, match: /^\d{6}$/ },
+        // Optional map pin. No default on `type`: a Point without coordinates breaks the 2dsphere index.
         location: {
-            type: { type: String, enum: ['Point'], default: 'Point' },
+            type: { type: String, enum: ['Point'] },
             // [lng, lat]
             coordinates: {
                 type: [Number],

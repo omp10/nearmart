@@ -46,6 +46,22 @@ npm run dev                 # http://localhost:5173 (proxies /api to :5000)
 | `/admin/catalog/modules`, `/categories`, `/products` | panel | CRUD; categories nest 3 levels; module switches are admin-only |
 | `/admin/catalog/inventory`, `…/:productId/variants/:variantId/{adjust,stock,threshold}`, `/inventory/movements` | panel | per-variant stock, lowest first; every change goes into a ledger |
 
+### Service areas, addresses and slots (Phase 2)
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `GET /serviceability?pincode=&lat=&lng=` | app | which modules can serve a location |
+| `PATCH /me`, `/me/addresses` (CRUD) | customer | up to 10 addresses, exactly one default; each comes back with `serviceableModules` |
+| `GET /slots?module&kind&pincode&lat&lng&days` | app | upcoming slots by IST date; past-cutoff slots hidden, full ones `available: false` |
+| `/admin/zones` (+ `POST /check`) | panel | zones by pincode list and/or GeoJSON polygon; per-zone delivery fee settings for checkout |
+| `/admin/slots/rules`, `/blackouts`, `/preview` | panel | weekly slot rules per module/kind (delivery, pickup, return), optional per zone; closed dates |
+
+A location is served when its pincode is listed in a zone or its map pin falls inside the zone's
+polygon (MongoDB 2dsphere), so pincode-only service works without a paid map API. Overlapping zones
+are ranked by `priority`. Slot ids (`<ruleId>_<date>`) are re-checked at checkout. Capacity is
+enforced by a conditional counter, so a slot can't be overbooked under concurrent orders. All dates
+and times are IST.
+
 Stock only changes through the inventory endpoints (and orders, from Phase 3). Each change is an
 atomic conditional update, so stock can't go negative under concurrent orders. Editing a product never
 touches existing variants' stock. A stock change bumps the product's version, so a product form saved
@@ -87,7 +103,7 @@ known problems were fixed:
 |---|---|---|---|
 | **0 (done)** | §9 foundation | config, auth (OTP + staff), roles, uploads, push + inbox, Razorpay, tests | login, layout, permission-aware nav, staff & roles |
 | **1 (done)** | §3, §4, §6, §7 | module on/off, nested categories, products with variants (SKU, unit, pack size, selling/offer price, per-variant stock), specs, warranty, produce notes, stock ledger, public browse/search API | categories, products, product editor, inventory |
-| 2 | §2 location | service areas (pincode list and/or polygon), customer addresses, serviceability check, delivery slots | zones, slots |
+| **2 (done)** | §2, §5, §7 | service areas (pincodes and/or polygon), customer profile & addresses, serviceability, delivery/pickup/return slots with capacity, closed dates | service areas (with location checker), slots (rules, 7-day preview, closed dates) |
 | 3 | §2, §3, §4, §6 | cart (split per module at checkout), server-side pricing & tax, coupons, orders with a per-module status flow, unavailable-item handling, payment events → order status | orders, coupons |
 | 4 | §5 | laundry service catalogue (per-kg rates), pickup slots, bookings, weight confirmation and price adjustment | bookings |
 | 5 | §7, §8 | dashboard counts, reports + CSV/XLSX export, settings (contact, policies), banners, ops panel views scoped to the user's modules | dashboard, reports, settings, banners |

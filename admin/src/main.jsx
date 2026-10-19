@@ -11,7 +11,9 @@ import ProductEditor from './pages/ProductEditor.jsx';
 import Products from './pages/Products.jsx';
 import Login from './pages/Login.jsx';
 import NotFound from './pages/NotFound.jsx';
+import Slots from './pages/Slots.jsx';
 import Staff from './pages/Staff.jsx';
+import Zones from './pages/Zones.jsx';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -59,6 +61,8 @@ createRoot(document.getElementById('root')).render(
                             <Route path="products/new" element={<RequirePermission section="catalog"><ProductEditor /></RequirePermission>} />
                             <Route path="products/:id" element={<RequirePermission section="catalog"><ProductEditor key="edit" /></RequirePermission>} />
                             <Route path="inventory" element={<RequirePermission section="inventory"><Inventory /></RequirePermission>} />
+                            <Route path="zones" element={<RequirePermission section="zones"><Zones /></RequirePermission>} />
+                            <Route path="slots" element={<RequirePermission section="zones"><Slots /></RequirePermission>} />
                             <Route path="staff" element={<RequirePermission section="staff"><Staff /></RequirePermission>} />
                             <Route path="*" element={<NotFound />} />
                         </Route>
