@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api, errorMessage } from '../lib/api.js';
-import { BUSINESS_MODULES, NAV_ITEMS, PERMISSION_ACTIONS } from '../nav.js';
+import { BUSINESS_MODULES, PERMISSION_ACTIONS, PERMISSION_SECTIONS } from '../nav.js';
 
 const EMPTY_FORM = { name: '', email: '', phone: '', password: '', role: 'ops', modules: [], permissions: {} };
 
@@ -25,7 +25,7 @@ function PermissionGrid({ value, onChange, grantable }) {
                     </tr>
                 </thead>
                 <tbody>
-                    {NAV_ITEMS.map(({ section, label }) => (
+                    {PERMISSION_SECTIONS.map(({ section, label }) => (
                         <tr key={section} className="border-t border-slate-100">
                             <td className="py-1.5 pr-4">{label}</td>
                             {PERMISSION_ACTIONS.map((action) => (

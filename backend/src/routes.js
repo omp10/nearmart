@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { isDbConnected } from './config/db.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import catalogAdminRoutes from './modules/catalog/catalog.admin.routes.js';
+import catalogPublicRoutes from './modules/catalog/catalog.public.routes.js';
 import notificationRoutes from './modules/notifications/notification.routes.js';
 import paymentRoutes from './modules/payments/payment.routes.js';
 import staffRoutes from './modules/staff/staff.routes.js';
@@ -25,5 +27,7 @@ router.use('/notifications', notificationRoutes);
 router.use('/uploads', uploadRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/admin/staff', staffRoutes);
+router.use('/admin/catalog', catalogAdminRoutes);
+router.use('/catalog', catalogPublicRoutes);
 
 export default router;

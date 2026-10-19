@@ -64,5 +64,11 @@ export const requirePermission = (section, action = 'view') => (req, _res, next)
     return actions.includes(action) ? next() : next(new ForbiddenError());
 };
 
-export const requireSuperAdmin = (req, _res, next) =>
+/**
+ * The business modules this staff member may manage: null means all (admins),
+ * otherwise the ops user's assigned modules.
+ */
+export const allowedModules = (req) => (req.auth?.role === STAFF_ROLES.OPS ? req.auth.modules : null);
+
+export const requireSuperAdmin =(req, _res, next) =>
     req.auth?.kind === 'staff' && req.auth.isSuperAdmin ? next() : next(new ForbiddenError('Super admin only'));

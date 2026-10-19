@@ -1,0 +1,13 @@
+const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
+
+/** 12345 → "₹123.45". The API stores money as whole paise. */
+export const formatPaise = (paise) => (paise == null ? '—' : inr.format(paise / 100));
+
+/** Form value in rupees ("123.45") → whole paise, or null when blank. */
+export const rupeesToPaise = (value) => {
+    if (value === '' || value == null) return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.round(n * 100) : NaN;
+};
+
+export const paiseToRupees = (paise) => (paise == null ? '' : String(paise / 100));

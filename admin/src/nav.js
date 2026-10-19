@@ -5,8 +5,9 @@
  */
 export const NAV_ITEMS = [
     { to: '/', label: 'Dashboard', section: 'dashboard', ready: true },
-    { to: '/catalog', label: 'Catalogue', section: 'catalog', ready: false },
-    { to: '/inventory', label: 'Inventory', section: 'inventory', ready: false },
+    { to: '/categories', label: 'Categories', section: 'catalog', ready: true },
+    { to: '/products', label: 'Products', section: 'catalog', ready: true },
+    { to: '/inventory', label: 'Inventory', section: 'inventory', ready: true },
     { to: '/orders', label: 'Orders', section: 'orders', ready: false },
     { to: '/bookings', label: 'Laundry bookings', section: 'bookings', ready: false },
     { to: '/customers', label: 'Customers', section: 'customers', ready: false },
@@ -19,7 +20,20 @@ export const NAV_ITEMS = [
 ];
 
 /** Must match PERMISSION_SECTIONS / PERMISSION_ACTIONS / BUSINESS_MODULES in the backend. */
-export const PERMISSION_SECTIONS = NAV_ITEMS.map((n) => n.section);
+export const PERMISSION_SECTIONS = [
+    { section: 'dashboard', label: 'Dashboard' },
+    { section: 'catalog', label: 'Catalogue (categories & products)' },
+    { section: 'inventory', label: 'Inventory' },
+    { section: 'orders', label: 'Orders' },
+    { section: 'bookings', label: 'Laundry bookings' },
+    { section: 'customers', label: 'Customers' },
+    { section: 'zones', label: 'Service areas' },
+    { section: 'banners', label: 'Banners' },
+    { section: 'coupons', label: 'Coupons' },
+    { section: 'reports', label: 'Reports' },
+    { section: 'settings', label: 'Settings' },
+    { section: 'staff', label: 'Staff & roles' }
+];
 export const PERMISSION_ACTIONS = ['view', 'create', 'update', 'delete'];
 export const BUSINESS_MODULES = [
     { id: 'grocery', label: 'Grocery' },

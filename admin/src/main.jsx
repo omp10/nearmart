@@ -4,7 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { AuthProvider, useAuth } from './auth/AuthProvider.jsx';
 import AppLayout from './layout/AppLayout.jsx';
+import Categories from './pages/Categories.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Inventory from './pages/Inventory.jsx';
+import ProductEditor from './pages/ProductEditor.jsx';
+import Products from './pages/Products.jsx';
 import Login from './pages/Login.jsx';
 import NotFound from './pages/NotFound.jsx';
 import Staff from './pages/Staff.jsx';
@@ -50,6 +54,11 @@ createRoot(document.getElementById('root')).render(
                         <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
                         <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
                             <Route index element={<Dashboard />} />
+                            <Route path="categories" element={<RequirePermission section="catalog"><Categories /></RequirePermission>} />
+                            <Route path="products" element={<RequirePermission section="catalog"><Products /></RequirePermission>} />
+                            <Route path="products/new" element={<RequirePermission section="catalog"><ProductEditor /></RequirePermission>} />
+                            <Route path="products/:id" element={<RequirePermission section="catalog"><ProductEditor key="edit" /></RequirePermission>} />
+                            <Route path="inventory" element={<RequirePermission section="inventory"><Inventory /></RequirePermission>} />
                             <Route path="staff" element={<RequirePermission section="staff"><Staff /></RequirePermission>} />
                             <Route path="*" element={<NotFound />} />
                         </Route>

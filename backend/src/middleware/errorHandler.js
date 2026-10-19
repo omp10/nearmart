@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import multer from 'multer';
+import { ZodError } from 'zod';
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 import { NotFoundError } from '../lib/errors.js';
@@ -20,6 +21,11 @@ export const errorHandler = (err, req, res, _next) => {
     if (err instanceof multer.MulterError) {
         status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
         message = err.code === 'LIMIT_FILE_SIZE' ? `File is too large (max ${env.UPLOAD_MAX_IMAGE_MB}MB)` : err.message;
+    } else if (err instanceof ZodError) {
+        // A schema parsed inline in a handler (route params and the like).
+        status = 400;
+        details = err.issues.map((i) => ({ path: i.path.join('.'), message: i.message }));
+        message = details[0]?.message || 'Invalid request';
     } else if (err instanceof mongoose.Error.ValidationError) {
         status = 400;
         message = Object.values(err.errors)[0]?.message || 'Invalid data';

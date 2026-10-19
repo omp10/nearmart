@@ -32,8 +32,24 @@ npm run dev                 # http://localhost:5173 (proxies /api to :5000)
 
 - Base path `/api/v1`. Bodies: `{ success, message, data }`; errors: `{ success: false, message, details?, code? }`.
 - Input is validated with zod at the route; services receive clean data.
-- Audiences: customer app at the root paths, admin panel under `/admin/*`, ops panel under `/ops/*`.
-- Money is stored as integer paise wherever it touches payments.
+- Audiences: customer app at the root paths (e.g. `/catalog/*`), web panel under `/admin/*`. Ops users call
+  the same `/admin/*` endpoints; the API limits them to their assigned modules.
+- Money is stored and sent as integer paise (`pricePaise: 5950` = ₹59.50).
+
+### Catalogue (Phase 1)
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `GET /catalog/modules`, `/catalog/categories?module=` | app | active modules; category tree with hidden branches removed |
+| `GET /catalog/products?module&category&q&brand&minPrice&maxPrice&inStock&featured&sort&page` | app | `q` matches word prefixes in name/brand/keywords; stock counts never exposed, only `inStock` and `maxQty` per variant |
+| `GET /catalog/products/:idOrSlug`, `/catalog/brands?module=` | app | product detail; brand list for filters |
+| `/admin/catalog/modules`, `/categories`, `/products` | panel | CRUD; categories nest 3 levels; module switches are admin-only |
+| `/admin/catalog/inventory`, `…/:productId/variants/:variantId/{adjust,stock,threshold}`, `/inventory/movements` | panel | per-variant stock, lowest first; every change goes into a ledger |
+
+Stock only changes through the inventory endpoints (and orders, from Phase 3). Each change is an
+atomic conditional update, so stock can't go negative under concurrent orders. Editing a product never
+touches existing variants' stock. A stock change bumps the product's version, so a product form saved
+from a stale copy is re-applied to fresh data rather than overwriting the new stock.
 
 ### Auth
 
@@ -70,7 +86,7 @@ known problems were fixed:
 | Phase | Scope (SOW §) | Backend | Admin panel |
 |---|---|---|---|
 | **0 (done)** | §9 foundation | config, auth (OTP + staff), roles, uploads, push + inbox, Razorpay, tests | login, layout, permission-aware nav, staff & roles |
-| 1 | §3, §6, §7 | modules, nested categories, products with variants (SKU, unit, pack size, MRP/offer price, per-variant stock), specs & warranty fields | catalogue, categories, inventory |
+| **1 (done)** | §3, §4, §6, §7 | module on/off, nested categories, products with variants (SKU, unit, pack size, selling/offer price, per-variant stock), specs, warranty, produce notes, stock ledger, public browse/search API | categories, products, product editor, inventory |
 | 2 | §2 location | service areas (pincode list and/or polygon), customer addresses, serviceability check, delivery slots | zones, slots |
 | 3 | §2, §3, §4, §6 | cart (split per module at checkout), server-side pricing & tax, coupons, orders with a per-module status flow, unavailable-item handling, payment events → order status | orders, coupons |
 | 4 | §5 | laundry service catalogue (per-kg rates), pickup slots, bookings, weight confirmation and price adjustment | bookings |
