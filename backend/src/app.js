@@ -8,12 +8,14 @@ import { env } from './config/env.js';
 import { logger } from './lib/logger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { apiLimiter } from './middleware/rateLimit.js';
+import { registerBookingPaymentHandlers } from './modules/laundry/booking.service.js';
 import { registerOrderPaymentHandlers } from './modules/orders/order.service.js';
 import { webhookRouter } from './modules/payments/payment.routes.js';
 import routes from './routes.js';
 
 export const createApp = () => {
     registerOrderPaymentHandlers();
+    registerBookingPaymentHandlers();
     const app = express();
 
     app.disable('x-powered-by');

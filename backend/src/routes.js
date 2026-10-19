@@ -7,6 +7,7 @@ import cartRoutes from './modules/cart/cart.routes.js';
 import couponRoutes from './modules/coupons/coupon.routes.js';
 import customerRoutes from './modules/customers/customer.routes.js';
 import { adminOrderRoutes, checkoutRoutes, customerOrderRoutes } from './modules/orders/order.routes.js';
+import { adminLaundryRoutes, customerLaundryRoutes } from './modules/laundry/laundry.routes.js';
 import notificationRoutes from './modules/notifications/notification.routes.js';
 import { adminSlotRoutes, publicSlotRoutes } from './modules/slots/slot.routes.js';
 import { adminZoneRoutes, serviceabilityRoutes } from './modules/zones/zone.routes.js';
@@ -45,5 +46,7 @@ router.use('/checkout', checkoutRoutes);
 router.use('/orders', customerOrderRoutes);
 router.use('/admin/orders', adminOrderRoutes);
 router.use('/admin/coupons', couponRoutes);
+router.use('/laundry', customerLaundryRoutes);
+router.use('/admin/laundry', adminLaundryRoutes);
 
 export default router;

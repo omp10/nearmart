@@ -88,6 +88,26 @@ order is re-priced, keeping the checkout delivery fee and never raising the disc
 order is refunded the difference, and an order with nothing left is cancelled. There is no automatic
 substitution. Refunds go through Razorpay and are confirmed by the `refund.processed` webhook.
 
+### Laundry bookings (Phase 4)
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `GET /laundry/services` | app | price chart: per kg (weighed) or per piece (counted), minimum billed qty, turnaround |
+| `POST /laundry/bookings/quote`, `POST /laundry/bookings` | customer | estimated qty per service; pickup slot required (`kind=pickup`); cash or prepay the estimate |
+| `GET /laundry/bookings`, `/:id`, `/:id/payment`, `POST /:id/cancel`, `POST /:id/return-slot` | customer | cancel until picked up; pick the return slot (`kind=return`) once weighed |
+| `/admin/laundry/services` | panel | price chart CRUD |
+| `/admin/laundry/bookings` (list, detail, `status`, `weigh`, `return-slot`, `cancel`, `retry-refund`) | panel | laundry-module staff only |
+
+**Status flow:** `placed → pickup_scheduled → picked_up → weighed → processing → ready → out_for_return → completed`
+(`pending_payment` first when prepaid; cancellable before pickup). `weighed` is entered only by recording
+the weighed/counted quantity for every service. That fixes the final price: never below each service's
+minimum, plus the pickup fee fixed at booking.
+
+**Price difference (assumption, to confirm with the client, SOW §5/§11):** cash bookings pay the
+final amount at return. Prepaid bookings are refunded the difference automatically if the final is
+lower, or pay the balance in cash at return if it is higher. Completing the return records the
+balance as collected.
+
 Stock only changes through the inventory endpoints (and orders, from Phase 3). Each change is an
 atomic conditional update, so stock can't go negative under concurrent orders. Editing a product never
 touches existing variants' stock. A stock change bumps the product's version, so a product form saved
@@ -131,7 +151,7 @@ known problems were fixed:
 | **1 (done)** | §3, §4, §6, §7 | module on/off, nested categories, products with variants (SKU, unit, pack size, selling/offer price, per-variant stock), specs, warranty, produce notes, stock ledger, public browse/search API | categories, products, product editor, inventory |
 | **2 (done)** | §2, §5, §7 | service areas (pincodes and/or polygon), customer profile & addresses, serviceability, delivery/pickup/return slots with capacity, closed dates | service areas (with location checker), slots (rules, 7-day preview, closed dates) |
 | **3 (done)** | §2, §3, §4, §6 | cart, per-module checkout with server-side pricing & GST, COD + Razorpay, coupons, order status flow, unavailable items with partial refunds, unpaid-order expiry, reorder | orders board, order detail (advance / cancel / unavailable / retry refund), coupons, GST on products |
-| 4 | §5 | laundry service catalogue (per-kg rates), pickup slots, bookings, weight confirmation and price adjustment | bookings |
+| **4 (done)** | §5 | laundry price chart (per kg / per piece, minimums), pickup & return slots, bookings, weighing with final price, refunds or balance due, unpaid-booking expiry | laundry services, bookings board, booking detail (weigh with live preview, schedule return, advance, cancel) |
 | 5 | §7, §8 | dashboard counts, reports + CSV/XLSX export, settings (contact, policies), banners, ops panel views scoped to the user's modules | dashboard, reports, settings, banners |
 | 6 | §10 | OpenAPI spec for the app team, load/UAT fixes, deployment | — |
 

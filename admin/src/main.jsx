@@ -4,7 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { AuthProvider, useAuth } from './auth/AuthProvider.jsx';
 import AppLayout from './layout/AppLayout.jsx';
+import BookingDetail from './pages/BookingDetail.jsx';
+import Bookings from './pages/Bookings.jsx';
 import Categories from './pages/Categories.jsx';
+import LaundryServices from './pages/LaundryServices.jsx';
 import Coupons from './pages/Coupons.jsx';
 import OrderDetail from './pages/OrderDetail.jsx';
 import Orders from './pages/Orders.jsx';
@@ -66,6 +69,9 @@ createRoot(document.getElementById('root')).render(
                             <Route path="inventory" element={<RequirePermission section="inventory"><Inventory /></RequirePermission>} />
                             <Route path="orders" element={<RequirePermission section="orders"><Orders /></RequirePermission>} />
                             <Route path="orders/:id" element={<RequirePermission section="orders"><OrderDetail /></RequirePermission>} />
+                            <Route path="bookings" element={<RequirePermission section="bookings"><Bookings /></RequirePermission>} />
+                            <Route path="bookings/:id" element={<RequirePermission section="bookings"><BookingDetail /></RequirePermission>} />
+                            <Route path="laundry-services" element={<RequirePermission section="catalog"><LaundryServices /></RequirePermission>} />
                             <Route path="coupons" element={<RequirePermission section="coupons"><Coupons /></RequirePermission>} />
                             <Route path="zones" element={<RequirePermission section="zones"><Zones /></RequirePermission>} />
                             <Route path="slots" element={<RequirePermission section="zones"><Slots /></RequirePermission>} />

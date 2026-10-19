@@ -2,6 +2,7 @@ import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { connectDB, disconnectDB } from './config/db.js';
 import { logger } from './lib/logger.js';
+import { expireUnpaidBookings } from './modules/laundry/booking.service.js';
 import { expireUnpaidOrders } from './modules/orders/order.service.js';
 
 const start = async () => {
@@ -14,6 +15,7 @@ const start = async () => {
     // process; with several API instances, move it to a single scheduler.
     const expiryTimer = setInterval(() => {
         expireUnpaidOrders().catch((err) => logger.error({ err: err.message }, 'Unpaid order expiry failed'));
+        expireUnpaidBookings().catch((err) => logger.error({ err: err.message }, 'Unpaid booking expiry failed'));
     }, 60_000);
 
     const shutdown = (signal) => {
