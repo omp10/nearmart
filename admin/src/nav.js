@@ -1,0 +1,29 @@
+/**
+ * Sidebar entries, in scope order (§7). `section` is the permission section
+ * that gates the entry; `ready: false` marks modules not built yet, shown
+ * disabled so the panel's shape is visible from Phase 0.
+ */
+export const NAV_ITEMS = [
+    { to: '/', label: 'Dashboard', section: 'dashboard', ready: true },
+    { to: '/catalog', label: 'Catalogue', section: 'catalog', ready: false },
+    { to: '/inventory', label: 'Inventory', section: 'inventory', ready: false },
+    { to: '/orders', label: 'Orders', section: 'orders', ready: false },
+    { to: '/bookings', label: 'Laundry bookings', section: 'bookings', ready: false },
+    { to: '/customers', label: 'Customers', section: 'customers', ready: false },
+    { to: '/zones', label: 'Service areas', section: 'zones', ready: false },
+    { to: '/banners', label: 'Banners', section: 'banners', ready: false },
+    { to: '/coupons', label: 'Coupons', section: 'coupons', ready: false },
+    { to: '/reports', label: 'Reports', section: 'reports', ready: false },
+    { to: '/settings', label: 'Settings', section: 'settings', ready: false },
+    { to: '/staff', label: 'Staff & roles', section: 'staff', ready: true }
+];
+
+/** Must match PERMISSION_SECTIONS / PERMISSION_ACTIONS / BUSINESS_MODULES in the backend. */
+export const PERMISSION_SECTIONS = NAV_ITEMS.map((n) => n.section);
+export const PERMISSION_ACTIONS = ['view', 'create', 'update', 'delete'];
+export const BUSINESS_MODULES = [
+    { id: 'grocery', label: 'Grocery' },
+    { id: 'produce', label: 'Vegetables & produce' },
+    { id: 'laundry', label: 'Laundry' },
+    { id: 'electronics', label: 'Electrical & electronics' }
+];
