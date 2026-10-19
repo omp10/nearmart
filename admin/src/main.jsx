@@ -5,6 +5,9 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { AuthProvider, useAuth } from './auth/AuthProvider.jsx';
 import AppLayout from './layout/AppLayout.jsx';
 import Categories from './pages/Categories.jsx';
+import Coupons from './pages/Coupons.jsx';
+import OrderDetail from './pages/OrderDetail.jsx';
+import Orders from './pages/Orders.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Inventory from './pages/Inventory.jsx';
 import ProductEditor from './pages/ProductEditor.jsx';
@@ -61,6 +64,9 @@ createRoot(document.getElementById('root')).render(
                             <Route path="products/new" element={<RequirePermission section="catalog"><ProductEditor /></RequirePermission>} />
                             <Route path="products/:id" element={<RequirePermission section="catalog"><ProductEditor key="edit" /></RequirePermission>} />
                             <Route path="inventory" element={<RequirePermission section="inventory"><Inventory /></RequirePermission>} />
+                            <Route path="orders" element={<RequirePermission section="orders"><Orders /></RequirePermission>} />
+                            <Route path="orders/:id" element={<RequirePermission section="orders"><OrderDetail /></RequirePermission>} />
+                            <Route path="coupons" element={<RequirePermission section="coupons"><Coupons /></RequirePermission>} />
                             <Route path="zones" element={<RequirePermission section="zones"><Zones /></RequirePermission>} />
                             <Route path="slots" element={<RequirePermission section="zones"><Slots /></RequirePermission>} />
                             <Route path="staff" element={<RequirePermission section="staff"><Staff /></RequirePermission>} />

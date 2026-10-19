@@ -62,6 +62,32 @@ are ranked by `priority`. Slot ids (`<ruleId>_<date>`) are re-checked at checkou
 enforced by a conditional counter, so a slot can't be overbooked under concurrent orders. All dates
 and times are IST.
 
+### Cart, checkout and orders (Phase 3)
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `GET /cart`, `PUT /cart/items`, `DELETE /cart` | customer | one cart across modules, grouped per module; live prices; lines that can't be bought carry an `issue` |
+| `POST /checkout/quote`, `POST /checkout` | customer | one module per order (scope §6); `paymentMethod: cod \| online`; slot required when the module has slot rules |
+| `GET /orders`, `/orders/:id`, `/orders/:id/payment`, `POST /orders/:id/cancel`, `/orders/:id/reorder` | customer | cancel allowed until packing starts |
+| `/admin/orders` (list, detail, `status`, `cancel`, `items/:lineId/unavailable`, `retry-refund`) | panel | ops limited to their modules |
+| `/admin/coupons` | admin | percent (with cap) or flat; min order, dates, total and per-customer limits, first-order-only, modules |
+
+**Status flow (goods):** `pending_payment →(paid)→ placed → accepted → packing → ready → dispatched → delivered`,
+cancellable before dispatch. Online orders hold stock and slot for 15 minutes awaiting payment, then
+cancel automatically; a payment arriving later is refunded.
+
+**Pricing** is computed server-side only (`orders/pricing.service.js`). Prices include GST (shown as
+a breakdown). The delivery fee comes from the zone and is free above its threshold. One coupon per order.
+
+**Checkout** takes the slot, then stock per line, then the coupon, then creates the order and the
+Razorpay order. Any failure undoes the earlier steps, since there is no multi-document transaction
+(MongoDB may be standalone).
+
+**Unavailable items** (scope §3): staff mark a line unavailable while placed/accepted/packing. The
+order is re-priced, keeping the checkout delivery fee and never raising the discount. A paid-online
+order is refunded the difference, and an order with nothing left is cancelled. There is no automatic
+substitution. Refunds go through Razorpay and are confirmed by the `refund.processed` webhook.
+
 Stock only changes through the inventory endpoints (and orders, from Phase 3). Each change is an
 atomic conditional update, so stock can't go negative under concurrent orders. Editing a product never
 touches existing variants' stock. A stock change bumps the product's version, so a product form saved
@@ -104,7 +130,7 @@ known problems were fixed:
 | **0 (done)** | §9 foundation | config, auth (OTP + staff), roles, uploads, push + inbox, Razorpay, tests | login, layout, permission-aware nav, staff & roles |
 | **1 (done)** | §3, §4, §6, §7 | module on/off, nested categories, products with variants (SKU, unit, pack size, selling/offer price, per-variant stock), specs, warranty, produce notes, stock ledger, public browse/search API | categories, products, product editor, inventory |
 | **2 (done)** | §2, §5, §7 | service areas (pincodes and/or polygon), customer profile & addresses, serviceability, delivery/pickup/return slots with capacity, closed dates | service areas (with location checker), slots (rules, 7-day preview, closed dates) |
-| 3 | §2, §3, §4, §6 | cart (split per module at checkout), server-side pricing & tax, coupons, orders with a per-module status flow, unavailable-item handling, payment events → order status | orders, coupons |
+| **3 (done)** | §2, §3, §4, §6 | cart, per-module checkout with server-side pricing & GST, COD + Razorpay, coupons, order status flow, unavailable items with partial refunds, unpaid-order expiry, reorder | orders board, order detail (advance / cancel / unavailable / retry refund), coupons, GST on products |
 | 4 | §5 | laundry service catalogue (per-kg rates), pickup slots, bookings, weight confirmation and price adjustment | bookings |
 | 5 | §7, §8 | dashboard counts, reports + CSV/XLSX export, settings (contact, policies), banners, ops panel views scoped to the user's modules | dashboard, reports, settings, banners |
 | 6 | §10 | OpenAPI spec for the app team, load/UAT fixes, deployment | — |

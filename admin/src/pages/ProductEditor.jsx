@@ -39,6 +39,7 @@ const fromProduct = (p) => ({
     availabilityNote: p.availabilityNote,
     handlingNote: p.handlingNote,
     tags: p.tags.join(', '),
+    gstRate: p.gstRate ?? 0,
     isActive: p.isActive,
     isFeatured: p.isFeatured,
     variants: p.variants.map((v) => ({
@@ -60,7 +61,7 @@ const fromProduct = (p) => ({
 
 const emptyForm = (module) => ({
     module, category: '', name: '', brand: '', modelNumber: '', description: '', images: [], specifications: [],
-    warranty: '', returnPolicy: '', availabilityNote: '', handlingNote: '', tags: '', isActive: true, isFeatured: false,
+    warranty: '', returnPolicy: '', availabilityNote: '', handlingNote: '', tags: '', gstRate: 0, isActive: true, isFeatured: false,
     variants: [blankVariant()]
 });
 
@@ -217,6 +218,12 @@ export default function ProductEditor() {
                     <div>
                         <label className="label" htmlFor="p-brand">Brand</label>
                         <input id="p-brand" className="input" value={form.brand} onChange={(e) => set({ brand: e.target.value })} maxLength={80} />
+                    </div>
+                    <div>
+                        <label className="label" htmlFor="p-gst">GST (included in prices)</label>
+                        <select id="p-gst" className="input" value={form.gstRate} onChange={(e) => set({ gstRate: Number(e.target.value) })}>
+                            {[0, 5, 12, 18, 28].map((r) => <option key={r} value={r}>{r}%</option>)}
+                        </select>
                     </div>
                     {isElectronics && (
                         <div>

@@ -20,6 +20,16 @@ const razorpay = () => {
     return client;
 };
 
+/**
+ * The only calls made to Razorpay. Kept on one object so tests can replace
+ * them without network access.
+ */
+export const gateway = {
+    createOrder: (params) => razorpay().orders.create(params),
+    fetchPayment: (id) => razorpay().payments.fetch(id),
+    refund: (paymentId, params) => razorpay().payments.refund(paymentId, params)
+};
+
 /** Constant-time comparison of two hex HMACs. */
 const safeEqualHex = (a, b) => {
     const left = Buffer.from(String(a), 'hex');
@@ -39,7 +49,7 @@ export const createGatewayPayment = async ({ userId, refType, refId, amountPaise
     if (!Number.isInteger(amountPaise) || amountPaise < 100) {
         throw new ValidationError('Amount must be at least ₹1');
     }
-    const order = await razorpay().orders.create({
+    const order = await gateway.createOrder({
         amount: amountPaise,
         currency: 'INR',
         receipt: `${refType}_${refId}`.slice(0, 40),
@@ -83,7 +93,7 @@ export const verifyClientPayment = async ({ userId, gatewayOrderId, gatewayPayme
     if (!payment) throw new NotFoundError('Payment not found');
     if (payment.status === 'paid') return payment;
 
-    const remote = await razorpay().payments.fetch(gatewayPaymentId);
+    const remote = await gateway.fetchPayment(gatewayPaymentId);
     if (remote.order_id !== gatewayOrderId || Number(remote.amount) !== payment.amountPaise) {
         logger.error({ gatewayOrderId, gatewayPaymentId, paid: remote.amount }, 'Payment amount/order mismatch');
         throw new ValidationError('Payment does not match this order');
@@ -93,6 +103,31 @@ export const verifyClientPayment = async ({ userId, gatewayOrderId, gatewayPayme
     }
 
     return (await markPaid({ _id: payment._id }, gatewayPaymentId)) || Payment.findById(payment._id);
+};
+
+/**
+ * Asks Razorpay to refund part or all of a captured payment. The refunded
+ * amount is only recorded when the `refund.processed` webhook confirms it.
+ * Requests are capped at what has not yet been refunded or requested.
+ */
+export const initiateRefund = async (paymentId, amountPaise, reason = '') => {
+    const payment = await Payment.findById(paymentId);
+    if (!payment) throw new NotFoundError('Payment not found');
+    if (!['paid', 'partially_refunded'].includes(payment.status) || !payment.gatewayPaymentId) {
+        throw new ValidationError('Only a captured payment can be refunded');
+    }
+    const requested = payment.refundRequests.reduce((sum, r) => sum + r.amountPaise, 0);
+    const amount = Math.min(Math.round(amountPaise), payment.amountPaise - requested);
+    if (amount <= 0) return null;
+
+    const refund = await gateway.refund(payment.gatewayPaymentId, {
+        amount,
+        notes: { reason: String(reason).slice(0, 200), refType: payment.refType, refId: String(payment.refId) }
+    });
+    payment.refundRequests.push({ gatewayRefundId: refund.id, amountPaise: amount, reason });
+    await payment.save();
+    logger.info({ paymentId: String(payment._id), amount }, 'Refund requested');
+    return { gatewayRefundId: refund.id, amountPaise: amount };
 };
 
 export const verifyWebhookSignature = (rawBody, signature) => {

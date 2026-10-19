@@ -24,7 +24,21 @@ const paymentSchema = new mongoose.Schema(
             default: 'created',
             index: true
         },
+        /** Confirmed by the refund.processed webhook. */
         refundedPaise: { type: Number, default: 0 },
+        /** Refunds we asked Razorpay for, confirmed or not. */
+        refundRequests: {
+            type: [
+                {
+                    _id: false,
+                    gatewayRefundId: String,
+                    amountPaise: Number,
+                    reason: { type: String, default: '' },
+                    requestedAt: { type: Date, default: Date.now }
+                }
+            ],
+            default: []
+        },
         failureReason: { type: String, default: '' },
         paidAt: { type: Date, default: null }
     },

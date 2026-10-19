@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { pageQuery } from '../../lib/pagination.js';
 import { BUSINESS_MODULES } from '../staff/permissions.js';
 import { PRODUCT_MODULES } from './module.model.js';
-import { UNITS } from './product.model.js';
+import { GST_RATES, UNITS } from './product.model.js';
 import { STOCK_REASONS } from './stockMovement.model.js';
 
 export const objectId = z.string().regex(/^[a-f0-9]{24}$/i, 'Invalid id');
@@ -69,6 +69,7 @@ const productFields = {
     tags: z.array(z.string().trim().toLowerCase().min(1).max(40)).max(20).optional(),
     isActive: z.boolean().optional(),
     isFeatured: z.boolean().optional(),
+    gstRate: z.union(GST_RATES.map((r) => z.literal(r))).optional(),
     variants: z.array(variantSchema).min(1, 'Add at least one variant').max(50)
 };
 

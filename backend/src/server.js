@@ -2,6 +2,7 @@ import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { connectDB, disconnectDB } from './config/db.js';
 import { logger } from './lib/logger.js';
+import { expireUnpaidOrders } from './modules/orders/order.service.js';
 
 const start = async () => {
     await connectDB();
@@ -9,8 +10,15 @@ const start = async () => {
         logger.info(`Nearmart API listening on http://${env.HOST}:${env.PORT} (${env.NODE_ENV})`);
     });
 
+    // Cancels online orders whose payment window has passed. Runs in this
+    // process; with several API instances, move it to a single scheduler.
+    const expiryTimer = setInterval(() => {
+        expireUnpaidOrders().catch((err) => logger.error({ err: err.message }, 'Unpaid order expiry failed'));
+    }, 60_000);
+
     const shutdown = (signal) => {
         logger.info(`${signal} received, shutting down`);
+        clearInterval(expiryTimer);
         server.close(async () => {
             await disconnectDB();
             process.exit(0);

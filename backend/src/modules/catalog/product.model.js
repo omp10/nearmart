@@ -3,6 +3,7 @@ import { PRODUCT_MODULES } from './module.model.js';
 
 /** Base units for pack sizes / sold quantities (scope §3, §4). */
 export const UNITS = Object.freeze(['kg', 'g', 'l', 'ml', 'piece', 'pack', 'bunch', 'dozen', 'box']);
+export const GST_RATES = Object.freeze([0, 5, 12, 18, 28]);
 
 const paise = {
     type: Number,
@@ -61,6 +62,8 @@ const productSchema = new mongoose.Schema(
         availabilityNote: { type: String, trim: true, default: '', maxlength: 300 },
         handlingNote: { type: String, trim: true, default: '', maxlength: 300 },
         tags: { type: [String], default: [] },
+        /** GST %, included in the prices (Indian retail convention); shown as a breakdown on orders. */
+        gstRate: { type: Number, enum: GST_RATES, default: 0 },
         isActive: { type: Boolean, default: true },
         isFeatured: { type: Boolean, default: false },
         variants: {
