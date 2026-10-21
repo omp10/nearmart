@@ -14,7 +14,8 @@
     "seed:admin": "node scripts/seed-admin.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:indexes": "node scripts/sync-indexes.js"
+    "db:indexes": "node scripts/sync-indexes.js",
+    "staff:reset-password": "node scripts/reset-staff-password.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

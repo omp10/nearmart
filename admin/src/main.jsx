@@ -1,30 +1,41 @@
-import { StrictMode } from 'react';
+import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router';
 import { AuthProvider, useAuth } from './auth/AuthProvider.jsx';
 import AppLayout from './layout/AppLayout.jsx';
-import Banners from './pages/Banners.jsx';
-import BookingDetail from './pages/BookingDetail.jsx';
-import { CustomerDetail, Customers } from './pages/Customers.jsx';
-import Reports from './pages/Reports.jsx';
-import Settings from './pages/Settings.jsx';
-import Bookings from './pages/Bookings.jsx';
-import Categories from './pages/Categories.jsx';
-import LaundryServices from './pages/LaundryServices.jsx';
-import Coupons from './pages/Coupons.jsx';
-import OrderDetail from './pages/OrderDetail.jsx';
-import Orders from './pages/Orders.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import Inventory from './pages/Inventory.jsx';
-import ProductEditor from './pages/ProductEditor.jsx';
-import Products from './pages/Products.jsx';
 import Login from './pages/Login.jsx';
 import NotFound from './pages/NotFound.jsx';
-import Slots from './pages/Slots.jsx';
-import Staff from './pages/Staff.jsx';
-import Zones from './pages/Zones.jsx';
 import './index.css';
+
+// Each page loads when first opened, so the first screen stays small.
+const Banners = lazy(() => import('./pages/Banners.jsx'));
+const BookingDetail = lazy(() => import('./pages/BookingDetail.jsx'));
+const Bookings = lazy(() => import('./pages/Bookings.jsx'));
+const Categories = lazy(() => import('./pages/Categories.jsx'));
+const Coupons = lazy(() => import('./pages/Coupons.jsx'));
+const CustomerDetail = lazy(() => import('./pages/Customers.jsx').then((m) => ({ default: m.CustomerDetail })));
+const Customers = lazy(() => import('./pages/Customers.jsx').then((m) => ({ default: m.Customers })));
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const Inventory = lazy(() => import('./pages/Inventory.jsx'));
+const LaundryServices = lazy(() => import('./pages/LaundryServices.jsx'));
+const OrderDetail = lazy(() => import('./pages/OrderDetail.jsx'));
+const Orders = lazy(() => import('./pages/Orders.jsx'));
+const ProductEditor = lazy(() => import('./pages/ProductEditor.jsx'));
+const Products = lazy(() => import('./pages/Products.jsx'));
+const Reports = lazy(() => import('./pages/Reports.jsx'));
+const Settings = lazy(() => import('./pages/Settings.jsx'));
+const Slots = lazy(() => import('./pages/Slots.jsx'));
+const Staff = lazy(() => import('./pages/Staff.jsx'));
+const Zones = lazy(() => import('./pages/Zones.jsx'));
+
+function PageSuspense() {
+    return (
+        <Suspense fallback={<p className="text-sm text-slate-500" role="status">Loading…</p>}>
+            <Outlet />
+        </Suspense>
+    );
+}
 
 const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30_000 } }
@@ -65,6 +76,7 @@ createRoot(document.getElementById('root')).render(
                     <Routes>
                         <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
                         <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
+                          <Route element={<PageSuspense />}>
                             <Route index element={<Dashboard />} />
                             <Route path="categories" element={<RequirePermission section="catalog"><Categories /></RequirePermission>} />
                             <Route path="products" element={<RequirePermission section="catalog"><Products /></RequirePermission>} />
@@ -86,6 +98,7 @@ createRoot(document.getElementById('root')).render(
                             <Route path="slots" element={<RequirePermission section="zones"><Slots /></RequirePermission>} />
                             <Route path="staff" element={<RequirePermission section="staff"><Staff /></RequirePermission>} />
                             <Route path="*" element={<NotFound />} />
+                          </Route>
                         </Route>
                     </Routes>
                 </BrowserRouter>

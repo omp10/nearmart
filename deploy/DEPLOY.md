@@ -78,6 +78,14 @@ SEED_ADMIN_EMAIL=owner@client.com SEED_ADMIN_PASSWORD='<long password>' npm run 
 
 The super admin then creates the other staff in the panel (Staff & roles). Never reuse the seed password.
 
+**Locked out?** If no one who can reset passwords can sign in (for example, the only super admin
+forgot theirs), reset it on the server. This also unlocks and re-activates the account and signs
+out its old sessions:
+
+```bash
+STAFF_EMAIL=owner@client.com NEW_PASSWORD='<new long password>' npm run staff:reset-password
+```
+
 ## 4. Run
 
 ```bash

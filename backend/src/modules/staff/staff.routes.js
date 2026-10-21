@@ -73,7 +73,14 @@ router.get(
     async (req, res) => {
         const filter = req.validatedQuery.role ? { role: req.validatedQuery.role } : {};
         const rows = await Staff.find(filter).sort({ createdAt: -1 }).lean();
-        ok(res, rows.map((s) => ({ ...staffProfile(s), isActive: s.isActive, lastLoginAt: s.lastLoginAt })));
+        const now = new Date();
+        ok(res, rows.map((s) => ({
+            ...staffProfile(s),
+            permissions: s.isSuperAdmin ? staffProfile(s).permissions : s.permissions ?? {},
+            isActive: s.isActive,
+            lastLoginAt: s.lastLoginAt,
+            lockedUntil: s.lockedUntil && s.lockedUntil > now ? s.lockedUntil : null
+        })));
     }
 );
 
@@ -99,10 +106,10 @@ router.patch('/:id', requirePermission('staff', 'update'), validate(updateSchema
     });
     const wasActive = staff.isActive;
     Object.assign(staff, req.body);
-    // Permission or status changes take effect on the next request, not at token expiry.
-    if (req.body.permissions || req.body.role || req.body.modules || (wasActive && staff.isActive === false)) {
-        staff.tokenVersion += 1;
-    }
+    // Role, modules and permissions are read from the database on every request,
+    // so changes apply at once without signing the person out. Deactivation
+    // does end their sessions.
+    if (wasActive && staff.isActive === false) staff.tokenVersion += 1;
     await staff.save();
     if (!staff.isActive) await revokeAllForSubject(staff._id, 'staff');
     ok(res, { ...staffProfile(staff), isActive: staff.isActive }, 'Staff member updated');

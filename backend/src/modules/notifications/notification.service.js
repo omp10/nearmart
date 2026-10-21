@@ -3,6 +3,8 @@ import { NotFoundError } from '../../lib/errors.js';
 import { DeviceToken } from './deviceToken.model.js';
 import { Notification } from './notification.model.js';
 import { sendToOwner } from './push.service.js';
+import { Staff } from '../staff/staff.model.js';
+import { STAFF_ROLES } from '../staff/permissions.js';
 
 /**
  * Attaches a device token to an account. A token belongs to one account at a
@@ -40,7 +42,29 @@ export const notify = async ({ ownerKind, ownerId }, { title, body = '', type = 
     return doc;
 };
 
-export const listInbox = async ({ ownerKind, ownerId }, { page = 1, limit = 20 } = {}) => {
+/**
+ * Alerts every active staff member who can see `section` for `module`:
+ * super admins, admins holding the permission, and ops users assigned to the
+ * module who hold it. Never throws; an alert failing must not fail the order.
+ */
+export const notifyStaff = async ({ module, section }, message) => {
+    try {
+        const staff = await Staff.find({
+            isActive: true,
+            $and: [
+                { $or: [{ isSuperAdmin: true }, { [`permissions.${section}`]: 'view' }] },
+                { $or: [{ role: STAFF_ROLES.ADMIN }, { modules: module }] }
+            ]
+        })
+            .select('_id')
+            .lean();
+        await Promise.all(staff.map((s) => notify({ ownerKind: 'staff', ownerId: s._id }, message)));
+    } catch (err) {
+        logger.warn({ err: err.message, module, section }, 'Staff alert failed');
+    }
+};
+
+export const listInbox =async ({ ownerKind, ownerId }, { page = 1, limit = 20 } = {}) => {
     const filter = { ownerKind, ownerId };
     const [items, total, unread] = await Promise.all([
         Notification.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),

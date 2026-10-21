@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthProvider.jsx';
+import { ModuleTabs, useCurrentModule } from '../lib/moduleContext.jsx';
 import { api } from '../lib/api.js';
-import { Badge, ErrorNote, ImageUpload, Modal, ModuleTabs, flattenTree, useCategoryTree, useModules } from '../components/ui.jsx';
+import { Badge, ErrorNote, ImageUpload, Modal, flattenTree, useCategoryTree, useModules } from '../components/ui.jsx';
 
 const MAX_DEPTH = 2; // must match MAX_CATEGORY_DEPTH in the backend
 
@@ -122,7 +123,7 @@ function TreeRows({ nodes, onEdit, onAddChild, onDelete, can }) {
 export default function Categories() {
     const { can, user } = useAuth();
     const queryClient = useQueryClient();
-    const [module, setModule] = useState('grocery');
+    const { module } = useCurrentModule();
     const [editing, setEditing] = useState(null); // {} for new, a node to edit, or { parent } for a child
     const { data: tree = [], isLoading, error } = useCategoryTree(module);
     const { data: modules = [] } = useModules();
@@ -150,7 +151,7 @@ export default function Categories() {
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
-                <ModuleTabs value={module} onChange={setModule} />
+                <ModuleTabs />
                 {moduleRow && user.role === 'admin' && can('catalog', 'update') && (
                     <label className="flex items-center gap-2 text-sm">
                         <input

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthProvider.jsx';
+import { ModuleTabs, useCurrentModule } from '../lib/moduleContext.jsx';
 import { api } from '../lib/api.js';
-import { Badge, ErrorNote, Modal, ModuleTabs, useModules } from '../components/ui.jsx';
+import { Badge, ErrorNote, Modal, useModules } from '../components/ui.jsx';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const KIND_LABELS = { delivery: 'Delivery', pickup: 'Pickup', return: 'Return delivery' };
@@ -247,7 +248,7 @@ function Blackouts() {
 export default function Slots() {
     const { can } = useAuth();
     const queryClient = useQueryClient();
-    const [module, setModule] = useState('grocery');
+    const { module } = useCurrentModule();
     const [editing, setEditing] = useState(null);
     const { data: rules = [], isLoading, error } = useQuery({
         queryKey: ['slot-rules', module],
@@ -270,7 +271,7 @@ export default function Slots() {
                 {can('zones', 'create') && <button type="button" className="btn-primary" onClick={() => setEditing({})}>Add slot rule</button>}
             </div>
 
-            <ModuleTabs value={module} onChange={setModule} />
+            <ModuleTabs />
             <ErrorNote error={error || toggle.error || remove.error} />
 
             <div className="card overflow-x-auto p-0">

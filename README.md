@@ -26,7 +26,15 @@ npm install
 npm run dev                 # http://localhost:5173 (proxies /api to :5000)
 ```
 
-`npm test` in `backend/` runs the API tests against an in-memory MongoDB (no setup needed).
+## Tests
+
+| Suite | Run | What it covers |
+|---|---|---|
+| API (`backend/test`, 130 tests) | `cd backend && npm test` | Every endpoint and flow over real HTTP against an in-memory MongoDB: auth, catalogue, stock, zones, slots, cart, checkout, orders, laundry, payments and refunds (Razorpay replaced by a stand-in), reports, permissions, and the race conditions |
+| Browser end-to-end (`e2e/`, 10 tests) | `cd e2e && npm ci && npx playwright install chromium && npm test` | A real Chromium drives the admin panel against the real API and a throwaway database. The customer side is played through the API, as the app does. Covers: module switcher; categories; products with variants and decimal prices (including the offer-price error); restocking; service areas, slots, coupons and settings; an order from app to delivered with an item re-priced; pausing the store; laundry pickup → weighing → return; ops-user scoping, permission changes and lock/unlock; banners with image upload; customers; CSV/Excel downloads |
+
+`npm run test:headed` in `e2e/` shows the browser while it runs; `npm run report` opens the last
+run's report (with traces and screenshots for any failure). CI runs both suites.
 
 ## For the app team
 
@@ -43,6 +51,20 @@ refuses to start in production with unsafe settings (dev OTPs, console SMS, inse
 `TRUST_PROXY`, Razorpay without a webhook secret, identical JWT secrets). CI
 (`.github/workflows/ci.yml`) runs the tests and the admin build, and fails on high-severity
 dependency advisories.
+
+## Admin panel notes
+
+- **Module switcher:** the header selects Grocery, Produce, Laundry or Electronics. Categories,
+  Products, Inventory, Orders and Slots follow it (their in-page tabs change it too), and the
+  browser remembers it. Ops users see only their modules; with one module the switcher is hidden.
+- **Alerts:** a new order or pickup (and a customer cancelling one) notifies every staff member who
+  handles that module. The header bell shows them, refreshing every 20 seconds, and the tab title
+  shows the unread count.
+- **Staff:** edit role, modules and permissions (they apply at once, without signing the person
+  out), reset passwords, and unlock accounts. If nobody can sign in to reset a password, use
+  `npm run staff:reset-password` on the server (see `deploy/DEPLOY.md`).
+- **Deleting:** a product that has been ordered, or a service area with orders, bookings or slot
+  rules, can't be deleted. Hide or switch it off instead, so order history stays intact.
 
 ## Security notes
 

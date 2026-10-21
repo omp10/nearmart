@@ -118,10 +118,16 @@ export default function ProductEditor() {
         enabled: isEdit
     });
 
+    // Fill the form once per product. Re-filling whenever data or form state
+    // changed would throw away what the admin is typing.
+    const [loadedId, setLoadedId] = useState(null);
     useEffect(() => {
-        if (isEdit && product) setForm(fromProduct(product));
+        if (isEdit && product && loadedId !== product._id) {
+            setForm(fromProduct(product));
+            setLoadedId(product._id);
+        }
         if (!isEdit && !form) setForm(emptyForm(search.get('module') || 'grocery'));
-    }, [isEdit, product, form, search]);
+    }, [isEdit, product, loadedId, form, search]);
 
     const { data: tree = [] } = useCategoryTree(form?.module);
 

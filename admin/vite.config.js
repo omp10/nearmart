@@ -8,9 +8,10 @@ export default defineConfig({
     plugins: [react(), tailwindcss()],
     server: {
         port: 5173,
+        // API_PROXY_TARGET lets the end-to-end tests point the panel at their own API.
         proxy: {
-            '/api': 'http://localhost:5000',
-            '/uploads': 'http://localhost:5000'
+            '/api': process.env.API_PROXY_TARGET || 'http://localhost:5000',
+            '/uploads': process.env.API_PROXY_TARGET || 'http://localhost:5000'
         }
     }
 });

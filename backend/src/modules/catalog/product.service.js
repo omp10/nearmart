@@ -6,6 +6,7 @@ import { Category } from './category.model.js';
 import { PRODUCT_MODULES } from './module.model.js';
 import { Product } from './product.model.js';
 import { StockMovement } from './stockMovement.model.js';
+import { Order } from '../orders/order.model.js';
 
 const toId = (v) => new mongoose.Types.ObjectId(String(v));
 
@@ -111,10 +112,17 @@ export const updateProduct = async (id, input, { actor, allowedModules }) => {
     throw new ConflictError('Product changed while saving; try again');
 };
 
+/**
+ * Deletes a product that was never ordered. One that was stays (orders,
+ * reports and re-order link to it); hide it with "Visible to customers" off.
+ */
 export const deleteProduct = async (id, { allowedModules }) => {
     const product = await getProduct(id, { allowedModules });
-    // Phase 3: refuse when the product appears on orders, and suggest deactivating instead.
+    if (await Order.exists({ 'items.product': product._id })) {
+        throw new ConflictError('This product has been ordered, so it can\'t be deleted. Untick "Visible to customers" to hide it instead.');
+    }
     await product.deleteOne();
+    await StockMovement.deleteMany({ product: product._id });
 };
 
 const lowStockExpr = {

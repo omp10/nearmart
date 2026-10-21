@@ -8,7 +8,7 @@ import { formatRupees, includedTax } from '../../lib/money.js';
 import { escapeRegex } from '../../lib/pagination.js';
 import { uniqueSlug } from '../../lib/slug.js';
 import { getAddress } from '../customers/customer.service.js';
-import { notify } from '../notifications/notification.service.js';
+import { notify, notifyStaff } from '../notifications/notification.service.js';
 import { Payment } from '../payments/payment.model.js';
 import { createGatewayPayment, initiateRefund, paymentEvents } from '../payments/payment.service.js';
 import { assertCheckoutAllowed } from '../settings/settings.service.js';
@@ -39,7 +39,19 @@ const tell = (booking, title, body, type) =>
 const tellStatus = (booking, status, extra = '') =>
     tell(booking, BOOKING_LABELS[status], `${BOOKING_MESSAGES[status] ?? ''} ${extra}`.trim(), `booking.${status}`);
 
-const snapshotSlot = (s) => (s ? { id: s.id, date: s.date, start: s.start, end: s.end, label: s.label } : undefined);
+/** Tells laundry staff a pickup was booked (or, for prepaid, paid). */
+const alertStaffNewBooking = (booking) =>
+    notifyStaff(
+        { module: MODULE, section: 'bookings' },
+        {
+            title: `New laundry pickup #${booking.bookingNumber}`,
+            body: `${booking.items.map((l) => l.name).join(', ')} · pickup ${booking.pickupSlot?.date ?? ''} ${booking.pickupSlot?.label ?? ''}`.trim(),
+            type: 'staff.booking.new',
+            data: { bookingId: String(booking._id) }
+        }
+    );
+
+const snapshotSlot =(s) => (s ? { id: s.id, date: s.date, start: s.start, end: s.end, label: s.label } : undefined);
 
 // ─── Service catalogue ───
 
@@ -175,6 +187,7 @@ export const createBooking = async (userId, { addressId, items, pickupSlotId, in
             booking.payment.paymentId = payment.paymentId;
         } else {
             tellStatus(booking, 'placed');
+            alertStaffNewBooking(booking);
         }
         return { booking: booking.toObject(), payment };
     } catch (err) {
@@ -219,6 +232,12 @@ export const cancelBooking = async (id, { by, reason = '', userId, allowedModule
     if (booking.returnSlot?.id) await releaseSlot(booking.returnSlot.id).catch(() => {});
     if (paidOnline(booking)) await requestRefund(booking, booking.payment.paidPaise, `Booking ${booking.bookingNumber} cancelled`);
     tellStatus(booking, 'cancelled', paidOnline(booking) ? 'Your refund has been started.' : '');
+    if (by?.kind === 'user') {
+        notifyStaff(
+            { module: MODULE, section: 'bookings' },
+            { title: `Pickup #${booking.bookingNumber} cancelled by customer`, body: reason, type: 'staff.booking.cancelled', data: { bookingId: String(booking._id) } }
+        );
+    }
     return LaundryBooking.findById(booking._id).lean();
 };
 
@@ -418,7 +437,10 @@ export const registerBookingPaymentHandlers = () => {
                 },
                 { new: true }
             );
-            if (booking) return tellStatus(booking, 'placed');
+            if (booking) {
+                alertStaffNewBooking(booking);
+                return tellStatus(booking, 'placed');
+            }
 
             const late = await LaundryBooking.findById(payment.refId);
             if (late?.status === 'cancelled') {

@@ -10,7 +10,7 @@ import { adjustStock } from '../catalog/stock.service.js';
 import { Coupon } from '../coupons/coupon.model.js';
 import { discountFor, evaluateCoupon, redeemCoupon, releaseCoupon } from '../coupons/coupon.service.js';
 import { getAddress } from '../customers/customer.service.js';
-import { notify } from '../notifications/notification.service.js';
+import { notify, notifyStaff } from '../notifications/notification.service.js';
 import { Payment } from '../payments/payment.model.js';
 import { createGatewayPayment, initiateRefund, paymentEvents } from '../payments/payment.service.js';
 import { assertCheckoutAllowed } from '../settings/settings.service.js';
@@ -40,6 +40,18 @@ const notifyCustomer = (order, status, extra = '') =>
             data: { orderId: String(order._id) }
         }
     ).catch((err) => logger.warn({ err: err.message }, 'Order notification failed'));
+
+/** Tells the staff who handle this module's orders that one needs accepting. */
+const alertStaffNewOrder = (order) =>
+    notifyStaff(
+        { module: order.module, section: 'orders' },
+        {
+            title: `New order #${order.orderNumber}`,
+            body: `₹${order.pricing.totalPaise / 100} · ${order.items.length} item${order.items.length > 1 ? 's' : ''} · ${order.payment.method === 'cod' ? 'cash' : 'paid online'}${order.slot?.label ? ` · ${order.slot.date} ${order.slot.label}` : ''}`,
+            type: 'staff.order.new',
+            data: { orderId: String(order._id) }
+        }
+    );
 
 /** Runs compensation steps newest-first, logging (not throwing) any that fail. */
 const rollback = async (undo) => {
@@ -207,7 +219,10 @@ export const placeOrder = async (userId, { module, addressId, slotId, couponCode
         }
 
         await removeLines(userId, lines);
-        if (!online) notifyCustomer(order, 'placed');
+        if (!online) {
+            notifyCustomer(order, 'placed');
+            alertStaffNewOrder(order);
+        }
         return { order: order.toObject(), payment: gatewayPayment };
     } catch (err) {
         await rollback(undo);
@@ -268,6 +283,12 @@ export const cancelOrder = async (orderId, { by, reason = '', allowed = CANCELLA
         await requestRefund(order, order.pricing.totalPaise, `Order ${order.orderNumber} cancelled`);
     }
     notifyCustomer(order, 'cancelled', paidOnline(order) ? 'Your refund has been started.' : '');
+    if (by?.kind === 'user') {
+        notifyStaff(
+            { module: order.module, section: 'orders' },
+            { title: `Order #${order.orderNumber} cancelled by customer`, body: reason, type: 'staff.order.cancelled', data: { orderId: String(order._id) } }
+        );
+    }
     return Order.findById(order._id).lean();
 };
 
@@ -468,7 +489,10 @@ export const registerOrderPaymentHandlers = () => {
                 },
                 { new: true }
             );
-            if (order) return notifyCustomer(order, 'placed');
+            if (order) {
+                alertStaffNewOrder(order);
+                return notifyCustomer(order, 'placed');
+            }
 
             // Paid after we had already cancelled it (e.g. payment window expired): give the money back.
             const late = await Order.findById(payment.refId);

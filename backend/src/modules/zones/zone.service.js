@@ -1,5 +1,8 @@
-import { NotFoundError, ValidationError } from '../../lib/errors.js';
+import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js';
 import { inactiveModuleKeys } from '../catalog/module.service.js';
+import { LaundryBooking } from '../laundry/booking.model.js';
+import { Order } from '../orders/order.model.js';
+import { SlotBlackout, SlotRule } from '../slots/slot.model.js';
 import { Zone } from './zone.model.js';
 
 /**
@@ -34,9 +37,23 @@ export const updateZone = async (id, input) => {
     return saveZone(zone);
 };
 
+/**
+ * Deletes a service area nothing refers to. Orders and bookings keep a link
+ * to their area (shown on the order and used in reports), and slot rules or
+ * closed dates may be scoped to it; for those, switch the area off instead.
+ */
 export const deleteZone = async (id) => {
     const zone = await getZone(id);
-    // Phase 3: refuse while open orders reference the zone.
+    const [orders, bookings, rules, blackouts] = await Promise.all([
+        Order.exists({ zone: zone._id }),
+        LaundryBooking.exists({ zone: zone._id }),
+        SlotRule.exists({ zone: zone._id }),
+        SlotBlackout.exists({ zone: zone._id })
+    ]);
+    if (orders || bookings) {
+        throw new ConflictError('This service area has orders or bookings, so it can\'t be deleted. Untick "Active" to stop serving it instead.');
+    }
+    if (rules || blackouts) throw new ConflictError('Delete the slot rules and closed dates for this area first, or switch it off instead.');
     await zone.deleteOne();
 };
 

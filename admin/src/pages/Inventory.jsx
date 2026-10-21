@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
-import { Badge, ErrorNote, Modal, ModuleTabs, Pager, flattenTree, useCategoryTree, useDebounced } from '../components/ui.jsx';
+import { LaundryHasItsOwnPages, ModuleTabs, useCurrentModule } from '../lib/moduleContext.jsx';
+import { Badge, ErrorNote, Modal, Pager, flattenTree, useCategoryTree, useDebounced } from '../components/ui.jsx';
 
 const REASON_LABELS = {
     initial: 'Opening stock',
@@ -153,7 +154,7 @@ function History({ row }) {
 
 export default function Inventory() {
     const { can } = useAuth();
-    const [module, setModule] = useState('grocery');
+    const { module } = useCurrentModule();
     const [filters, setFilters] = useState({ q: '', category: '', stock: '' });
     const [page, setPage] = useState(1);
     const [dialog, setDialog] = useState(null); // { type: 'adjust' | 'history', row }
@@ -168,8 +169,25 @@ export default function Inventory() {
     const { data, isLoading, error } = useQuery({
         queryKey: ['inventory', params],
         queryFn: () => api.get('/admin/catalog/inventory', { params }).then((r) => r.data.data),
-        placeholderData: keepPreviousData
+        placeholderData: keepPreviousData,
+        enabled: module !== 'laundry'
     });
+
+    useEffect(() => {
+        setFilters((f) => ({ ...f, category: '' }));
+        setPage(1);
+    }, [module]);
+
+    // Laundry is the selected module: it has its own pages.
+    if (module === 'laundry') {
+        return (
+            <div className="space-y-6">
+                <h1 className="text-2xl font-semibold">Inventory</h1>
+                <ModuleTabs productOnly />
+                <LaundryHasItsOwnPages what="stock to manage" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -178,14 +196,7 @@ export default function Inventory() {
                 <p className="text-sm text-slate-500">Stock per variant, lowest first. Every change is recorded in the item's history.</p>
             </div>
 
-            <ModuleTabs
-                value={module}
-                productOnly
-                onChange={(m) => {
-                    setModule(m);
-                    setFilter({ category: '' });
-                }}
-            />
+            <ModuleTabs productOnly />
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <input className="input lg:col-span-2" placeholder="Search product, variant or SKU" aria-label="Search inventory" value={filters.q} onChange={(e) => setFilter({ q: e.target.value })} />

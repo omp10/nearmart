@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { api } from '../lib/api.js';
+import { LaundryHasItsOwnPages, ModuleTabs, useCurrentModule } from '../lib/moduleContext.jsx';
 import { formatPaise } from '../lib/money.js';
 import { PAYMENT_LABELS, STATUS_LABELS, STATUS_TONES } from '../lib/orders.js';
-import { Badge, ErrorNote, ModuleTabs, Pager, useDebounced } from '../components/ui.jsx';
+import { Badge, ErrorNote, Pager, useDebounced } from '../components/ui.jsx';
 
 const FILTERS = [
     ['open', 'Open'],
@@ -22,7 +23,7 @@ const FILTERS = [
 const when = (d) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 export default function Orders() {
-    const [module, setModule] = useState('grocery');
+    const { module } = useCurrentModule();
     const [status, setStatus] = useState('open');
     const [q, setQ] = useState('');
     const [slotDate, setSlotDate] = useState('');
@@ -35,8 +36,11 @@ export default function Orders() {
         queryFn: () => api.get('/admin/orders', { params }).then((r) => r.data.data),
         placeholderData: keepPreviousData,
         // New orders arrive while the page is open.
-        refetchInterval: 30_000
+        refetchInterval: 30_000,
+        enabled: module !== 'laundry'
     });
+
+    useEffect(() => setPage(1), [module]);
     const counts = data?.statusCounts ?? {};
     const openCount = ['placed', 'accepted', 'packing', 'ready', 'dispatched'].reduce((n, s) => n + (counts[s] ?? 0), 0);
 
@@ -45,6 +49,17 @@ export default function Orders() {
         setPage(1);
     };
 
+    // Laundry is the selected module: it has its own pages.
+    if (module === 'laundry') {
+        return (
+            <div className="space-y-6">
+                <h1 className="text-2xl font-semibold">Orders</h1>
+                <ModuleTabs productOnly />
+                <LaundryHasItsOwnPages what="product orders (its pickups are under Laundry bookings)" />
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6">
             <div>
@@ -52,7 +67,7 @@ export default function Orders() {
                 <p className="text-sm text-slate-500">Refreshes every 30 seconds.</p>
             </div>
 
-            <ModuleTabs value={module} onChange={pick(setModule)} productOnly />
+            <ModuleTabs productOnly />
 
             <div className="flex flex-wrap gap-1" role="tablist" aria-label="Order status">
                 {FILTERS.map(([value, label]) => {

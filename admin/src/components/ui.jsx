@@ -58,34 +58,6 @@ export function useModules() {
     });
 }
 
-/** Tabs over the business modules the signed-in user can access. */
-export function ModuleTabs({ value, onChange, productOnly = false }) {
-    const { data: modules = [] } = useModules();
-    const list = productOnly ? modules.filter((m) => m.key !== 'laundry') : modules;
-
-    useEffect(() => {
-        if (list.length && !list.some((m) => m.key === value)) onChange(list[0].key);
-    }, [list, value, onChange]);
-
-    return (
-        <div className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1" role="tablist">
-            {list.map((m) => (
-                <button
-                    key={m.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={value === m.key}
-                    onClick={() => onChange(m.key)}
-                    className={`rounded-md px-3 py-1.5 text-sm font-medium ${value === m.key ? 'bg-white shadow-sm' : 'text-slate-600'}`}
-                >
-                    {m.name}
-                    {!m.isActive && <span className="ml-1 text-xs text-slate-400">(off)</span>}
-                </button>
-            ))}
-        </div>
-    );
-}
-
 export function useCategoryTree(module) {
     return useQuery({
         queryKey: ['categories', module],
