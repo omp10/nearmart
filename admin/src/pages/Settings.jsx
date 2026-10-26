@@ -140,6 +140,7 @@ export default function Settings() {
     const [policies, setPolicies] = useState(null);
     const [orders, setOrders] = useState(null);
     const [operations, setOperations] = useState(null);
+    const [maps, setMaps] = useState(null);
     const [policyTab, setPolicyTab] = useState('terms');
     const [formError, setFormError] = useState('');
 
@@ -149,12 +150,14 @@ export default function Settings() {
         setPolicies(data.policies);
         setOrders({ ...data.orders, codMax: paiseToRupees(data.orders.codMaxOrderPaise) });
         setOperations(data.operations);
+        setMaps({ googleApiKey: data.maps?.googleApiKey ?? '' });
     }, [data, contact]);
 
     const saveContact = useSection('contact');
     const savePolicies = useSection('policies');
     const saveOrders = useSection('orders');
     const saveOperations = useSection('operations');
+    const saveMaps = useSection('maps');
 
     if (error) return <ErrorNote error={error} />;
     if (isLoading || !contact) return <p className="text-sm text-slate-500">Loading…</p>;
@@ -213,6 +216,24 @@ export default function Settings() {
             </Section>
 
             {user.isSuperAdmin && <PaymentGateway />}
+
+            <Section
+                title="Google Maps"
+                description="The customer app uses this key for address search, filling in addresses from a map pin, and map previews. Changes reach the app on its next start; no app update needed."
+                onSave={() => saveMaps.mutate({ googleApiKey: maps.googleApiKey.trim() })}
+                saving={saveMaps.isPending}
+                error={saveMaps.error}
+                saved={saveMaps.isSuccess}
+            >
+                <div>
+                    <label className="label" htmlFor="s-mapskey">API key</label>
+                    <input id="s-mapskey" className="input font-mono" placeholder="AIza…" value={maps.googleApiKey} onChange={(e) => setMaps({ googleApiKey: e.target.value })} />
+                </div>
+                <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    In Google Cloud, enable <strong>Places API (New)</strong>, <strong>Geocoding API</strong> and <strong>Maps Static API</strong> for this key, and
+                    restrict it to those APIs. Leave it empty to turn these features off; the app then asks for the address by hand.
+                </p>
+            </Section>
 
             <Section title="Contact details" onSave={() => saveContact.mutate(contact)} saving={saveContact.isPending} error={saveContact.error} saved={saveContact.isSuccess}>
                 <div className="grid gap-4 sm:grid-cols-2">

@@ -92,20 +92,20 @@ export const categoryTile = ({ name, colors, iconName }) =>
 </svg>`);
 
 /**
- * A photo banner: the image cropped to 3:1, darkened on the left so text
+ * A photo banner: the image cropped to 2:1 (what the app shows), darkened on the left so text
  * reads, with the headline, subtitle and call to action drawn on top.
  * (Generated images often garble lettering, so text is never left to them.)
  */
 export const bannerOverlay = async ({ photo, title, subtitle, cta, accent = '#16a34a' }) => {
-    const base = await sharp(photo).resize(1200, 400, { fit: 'cover', position: 'attention' }).toBuffer();
+    const base = await sharp(photo).resize(1200, 600, { fit: 'cover', position: 'attention' }).toBuffer();
     const lines = wrap(title, 22, 2);
-    const titleY = lines.length > 1 ? 150 : 185;
+    const titleY = lines.length > 1 ? 250 : 285;
     const ctaWidth = cta.length * 17 + 64;
-    const overlay = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400">
+    const overlay = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
   <defs><linearGradient id="shade" x1="0" y1="0" x2="1" y2="0">
     <stop offset="0" stop-color="#000" stop-opacity=".72"/><stop offset=".55" stop-color="#000" stop-opacity=".35"/><stop offset=".8" stop-color="#000" stop-opacity="0"/>
   </linearGradient></defs>
-  <rect width="1200" height="400" fill="url(#shade)"/>
+  <rect width="1200" height="600" fill="url(#shade)"/>
   ${lines.map((l, i) => `<text x="72" y="${titleY + i * 66}" ${FONT} font-size="58" font-weight="700" fill="#fff">${esc(l)}</text>`).join('')}
   <text x="72" y="${titleY + lines.length * 66 - 6}" ${FONT} font-size="28" fill="#fff" fill-opacity=".92">${esc(subtitle)}</text>
   <rect x="72" y="${titleY + lines.length * 66 + 30}" width="${ctaWidth}" height="58" rx="29" fill="#fff"/>

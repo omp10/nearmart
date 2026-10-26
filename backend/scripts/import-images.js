@@ -14,7 +14,8 @@
  *
  * Images go through the normal upload pipeline (re-encoded to WebP, served
  * under UPLOAD_BASE_URL). Banners get the headline, subtitle and button drawn
- * on top unless --raw-banners is given, so the artwork needs no text.
+ * on top (cropped to the app's 2:1 banner shape) unless --raw-banners is
+ * given, so the artwork needs no text.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';

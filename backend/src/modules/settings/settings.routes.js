@@ -28,7 +28,8 @@ const patchSchema = z
                 codMaxOrderPaise: z.number().int().min(0).nullable()
             })
             .partial(),
-        operations: z.object({ acceptingOrders: z.boolean(), pausedMessage: z.string().trim().max(200) }).partial()
+        operations: z.object({ acceptingOrders: z.boolean(), pausedMessage: z.string().trim().max(200) }).partial(),
+        maps: z.object({ googleApiKey: z.union([z.literal(''), z.string().trim().regex(/^AIza[0-9A-Za-z_-]{35}$/, "That doesn't look like a Google API key (it starts with AIza)")]) }).partial()
     })
     .partial();
 

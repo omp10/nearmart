@@ -29,6 +29,14 @@ const settingsSchema = new mongoose.Schema(
             /** Cash orders above this need online payment; null = no limit. */
             codMaxOrderPaise: { type: Number, min: 0, default: null }
         },
+        maps: {
+            /**
+             * Google Maps Platform key the apps use for place search, geocoding
+             * and map previews. A client-side key: protect it with API and app
+             * restrictions in Google Cloud, not by secrecy.
+             */
+            googleApiKey: text(200)
+        },
         operations: {
             /** Pause all new orders and bookings (stock-take, holiday, outage). */
             acceptingOrders: { type: Boolean, default: true },

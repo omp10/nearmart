@@ -34,6 +34,7 @@ export const publicSettings = async () => {
         contact: s.contact,
         policies: s.policies,
         payments: { cod: s.orders.codEnabled, online, codMaxOrderPaise: s.orders.codMaxOrderPaise },
+        maps: { googleApiKey: s.maps?.googleApiKey ?? '' },
         acceptingOrders: s.operations.acceptingOrders,
         pausedMessage: s.operations.acceptingOrders ? '' : s.operations.pausedMessage || 'We are not taking orders right now.'
     };

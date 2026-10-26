@@ -56,6 +56,15 @@ describe('settings', () => {
         expect((await order(1)).body.message).toMatch(/Cash on delivery is not available/);
     });
 
+    it('stores the Google Maps key for the apps and validates it', async () => {
+        const key = `AIza${'x'.repeat(35)}`;
+        expect((await api().patch('/api/v1/admin/settings').set(as(admin)).send({ maps: { googleApiKey: 'not-a-key' } })).status).toBe(400);
+        await api().patch('/api/v1/admin/settings').set(as(admin)).send({ maps: { googleApiKey: key } }).expect(200);
+        expect((await api().get('/api/v1/settings')).body.data.maps).toEqual({ googleApiKey: key });
+        await api().patch('/api/v1/admin/settings').set(as(admin)).send({ maps: { googleApiKey: '' } }).expect(200);
+        expect((await api().get('/api/v1/settings')).body.data.maps).toEqual({ googleApiKey: '' });
+    });
+
     it('is admin only', async () => {
         const ops = await createStaff({ role: 'ops', isSuperAdmin: false, modules: ['grocery'], permissions: { settings: ['view', 'update'] } });
         const token = (await loginStaff(ops)).token;
