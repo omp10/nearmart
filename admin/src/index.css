@@ -5,11 +5,16 @@
 @import 'tailwindcss';
 
 @theme {
+    /* Nearmart logo green ("mart") and the four shop colours from the bag. */
     --color-brand-50: #eef9f1;
-    --color-brand-100: #d5f0dd;
-    --color-brand-500: #23a455;
-    --color-brand-600: #1a8a46;
-    --color-brand-700: #156d38;
+    --color-brand-100: #d3f1da;
+    --color-brand-500: #30b34b;
+    --color-brand-600: #24983e;
+    --color-brand-700: #1c7a32;
+    --color-shop-grocery: #ef6c0a;
+    --color-shop-produce: #13a04e;
+    --color-shop-laundry: #0a6cff;
+    --color-shop-electronics: #7027e8;
     --font-sans: 'Poppins', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
     /* Pages are written against slate; map it onto the panel's warm-free neutral greys. */

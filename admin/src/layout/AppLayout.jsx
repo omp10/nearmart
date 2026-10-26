@@ -5,14 +5,15 @@ import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
 import { ModuleProvider, useCurrentModule } from '../lib/moduleContext.jsx';
 import { GLOBAL, NAV_GROUPS } from '../nav.js';
-import { Carrot, ChevronDown, Globe, LogOut, Menu, Plug, Search, ShoppingBasket, Store, WashingMachine } from 'lucide-react';
+import { ChevronDown, Globe, Leaf, LogOut, Menu, Plug, Search, Shirt, ShoppingCart, Store } from 'lucide-react';
 
+// Each shop wears its quarter of the logo's bag (classes spelled out for Tailwind).
 const MODULE_TABS = {
     [GLOBAL]: { label: 'Global', icon: Globe },
-    grocery: { label: 'Grocery', icon: ShoppingBasket },
-    produce: { label: 'Produce', icon: Carrot },
-    laundry: { label: 'Laundry', icon: WashingMachine },
-    electronics: { label: 'Electric', icon: Plug }
+    grocery: { label: 'Grocery', icon: ShoppingCart, on: 'bg-shop-grocery', tint: 'text-shop-grocery' },
+    produce: { label: 'Produce', icon: Leaf, on: 'bg-shop-produce', tint: 'text-shop-produce' },
+    laundry: { label: 'Laundry', icon: Shirt, on: 'bg-shop-laundry', tint: 'text-shop-laundry' },
+    electronics: { label: 'Electric', icon: Plug, on: 'bg-shop-electronics', tint: 'text-shop-electronics' }
 };
 
 const roleLabel = (user) => (user.isSuperAdmin ? 'Super admin' : user.role === 'ops' ? 'Operations' : 'Admin');
@@ -33,9 +34,9 @@ function ModuleSwitcher() {
     const { view, chooseModule, modules, canGlobal } = useCurrentModule();
     if (modules.length + (canGlobal ? 1 : 0) < 2) return null;
 
-    const tabClass = (active, extra = '') =>
+    const tabClass = (active, extra = '', on = 'bg-neutral-900') =>
         `flex min-w-0 items-center rounded-lg text-[11px] font-semibold transition ${
-            active ? 'bg-neutral-900 text-white shadow' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
+            active ? `${on} text-white shadow` : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
         } ${extra}`;
     const GlobalIcon = MODULE_TABS[GLOBAL].icon;
 
@@ -66,9 +67,9 @@ function ModuleSwitcher() {
                             aria-checked={m.key === view}
                             title={`${m.name}${m.isActive ? '' : ' (off)'}`}
                             onClick={() => chooseModule(m.key)}
-                            className={tabClass(m.key === view, `flex-col gap-0.5 px-1 py-1.5 ${m.isActive ? '' : 'opacity-60'}`)}
+                            className={tabClass(m.key === view, `flex-col gap-0.5 px-1 py-1.5 ${m.isActive ? '' : 'opacity-60'}`, tab.on)}
                         >
-                            <Icon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                            <Icon className={`h-4 w-4 ${m.key === view ? '' : (tab.tint ?? '')}`} strokeWidth={1.8} aria-hidden="true" />
                             <span className="w-full truncate">{tab.label}</span>
                         </button>
                     );
@@ -86,9 +87,12 @@ function Sidebar({ onNavigate }) {
     return (
         <div className="flex h-full flex-col">
             <div className="flex items-center gap-3 px-5 pt-5 pb-3">
-                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-600 text-lg font-bold text-white shadow-sm">N</div>
+                <img src="/brand/mark.png" alt="" className="h-10 w-10 shrink-0 object-contain" />
                 <div className="min-w-0">
-                    <div className="truncate text-[15px] font-bold text-neutral-900">Nearmart</div>
+                    <div className="truncate text-[17px] font-extrabold tracking-tight">
+                        <span className="text-[#292e3c]">Near</span>
+                        <span className="text-brand-500">mart</span>
+                    </div>
                     <div className="flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.14em] text-neutral-500 uppercase">
                         <span className="h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
                         {roleLabel(user)}

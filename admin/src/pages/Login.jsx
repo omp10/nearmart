@@ -2,6 +2,18 @@ import { useState } from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { errorMessage } from '../lib/api.js';
 
+/** The logo's four shop colours as a short segmented bar. */
+export function ShopStripe() {
+    return (
+        <div className="flex gap-1" aria-hidden="true">
+            <span className="h-1 w-6 rounded-full bg-shop-grocery" />
+            <span className="h-1 w-6 rounded-full bg-shop-produce" />
+            <span className="h-1 w-6 rounded-full bg-shop-laundry" />
+            <span className="h-1 w-6 rounded-full bg-shop-electronics" />
+        </div>
+    );
+}
+
 export default function Login() {
     const { login } = useAuth();
     const [email, setEmail] = useState('');
@@ -25,14 +37,12 @@ export default function Login() {
     return (
         <div className="grid min-h-screen place-items-center bg-[radial-gradient(ellipse_at_top,_var(--color-brand-50),_var(--color-neutral-100)_60%)] px-4">
             <form onSubmit={onSubmit} className="w-full max-w-sm space-y-5 rounded-2xl border border-neutral-200 bg-white p-7 shadow-lg shadow-neutral-900/5">
-                <div className="flex items-center gap-3">
-                    <div className="grid h-11 w-11 place-items-center rounded-xl bg-brand-600 text-xl font-bold text-white shadow-sm">N</div>
-                    <div>
-                        <h1 className="text-xl font-bold">Nearmart</h1>
-                        <p className="text-[10px] font-semibold tracking-[0.18em] text-neutral-500 uppercase">Admin panel</p>
-                    </div>
+                <div className="flex flex-col items-center gap-3 pt-1">
+                    <img src="/brand/logo.png" alt="Nearmart" className="h-28 w-auto" />
+                    <ShopStripe />
+                    <h1 className="text-[11px] font-semibold tracking-[0.18em] text-neutral-500 uppercase">Admin panel</h1>
                 </div>
-                <p className="text-sm text-slate-500">Sign in with your staff email and password.</p>
+                <p className="text-center text-sm text-slate-500">Sign in with your staff email and password.</p>
 
                 {error && (
                     <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
