@@ -123,6 +123,33 @@ describe('dashboard', () => {
         expect(scoped.catalogue.byModule.map((m) => m.module)).toEqual(['electronics']);
         expect(scoped.bookings).toBeNull();
     });
+
+    it('narrows to one module, and ops cannot ask for a module they lack', async () => {
+        await order(2);
+        const get = (token, module) => api().get(`/api/v1/admin/dashboard?module=${module}`).set(as(token));
+
+        const grocery = (await get(admin, 'grocery')).body.data;
+        expect(grocery.today.orders).toBe(1);
+        expect(grocery.week.byModule.map((m) => m.module)).toEqual(['grocery']);
+        expect(grocery.catalogue.byModule.map((m) => m.module)).toEqual(['grocery']);
+        expect(grocery.catalogue.lowStockVariants).toBe(1); // only the 5 kg atta; the TV is electronics
+        expect(grocery.bookings).toBeNull();
+
+        const electronics = (await get(admin, 'electronics')).body.data;
+        expect(electronics.today.orders).toBe(0);
+        expect(electronics.openOrders.total).toBe(0);
+        expect(electronics.catalogue.byModule).toEqual([{ module: 'electronics', products: 1, active: 1, outOfStock: 1 }]);
+
+        const laundry = (await get(admin, 'laundry')).body.data;
+        expect(laundry.catalogue.byModule).toEqual([]);
+        expect(laundry.bookings).toMatchObject({ open: 0 });
+        expect(laundry.week.byModule.map((m) => m.module)).toEqual(['laundry']);
+
+        expect((await get(admin, 'toys')).status).toBe(400);
+        const ops = (await loginStaff(await createStaff({ role: 'ops', isSuperAdmin: false, modules: ['electronics'], permissions: {} }))).token;
+        expect((await get(ops, 'grocery')).status).toBe(403);
+        expect((await get(ops, 'electronics')).status).toBe(200);
+    });
 });
 
 describe('reports', () => {

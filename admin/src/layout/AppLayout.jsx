@@ -16,20 +16,20 @@ const MODULE_TABS = {
 
 const roleLabel = (user) => (user.isSuperAdmin ? 'Super admin' : user.role === 'ops' ? 'Operations' : 'Admin');
 
-/** Nav groups the signed-in user may open, narrowed by a search query. */
+/** Nav groups the signed-in user may open in the selected module, narrowed by a search query. */
 function useNavGroups(query = '') {
     const { can } = useAuth();
+    const { module } = useCurrentModule();
     const q = query.trim().toLowerCase();
     // Everyone gets the dashboard as a landing page; its widgets check their own permissions.
-    return NAV_GROUPS.map((g) => ({
-        ...g,
-        items: g.items.filter((item) => (item.to === '/' || can(item.section)) && (!q || item.label.toLowerCase().includes(q)))
-    })).filter((g) => g.items.length);
+    const shows = (item) =>
+        (item.to === '/' || can(item.section)) && (!item.modules || item.modules.includes(module)) && (!q || item.label.toLowerCase().includes(q));
+    return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter(shows) })).filter((g) => g.items.length);
 }
 
 /** Pill tabs choosing the module every module-aware page shows. */
 function ModuleSwitcher() {
-    const { module, setModule, modules } = useCurrentModule();
+    const { module, chooseModule, modules } = useCurrentModule();
     if (modules.length < 2) return null;
     return (
         <div role="radiogroup" aria-label="Module" className="grid auto-cols-fr grid-flow-col gap-1 rounded-xl border border-neutral-200 bg-white p-1 shadow-sm">
@@ -44,7 +44,7 @@ function ModuleSwitcher() {
                         role="radio"
                         aria-checked={active}
                         title={`${m.name}${m.isActive ? '' : ' (off)'}`}
-                        onClick={() => setModule(m.key)}
+                        onClick={() => chooseModule(m.key)}
                         className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] font-semibold transition ${
                             active ? 'bg-neutral-900 text-white shadow' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
                         } ${m.isActive ? '' : 'opacity-60'}`}

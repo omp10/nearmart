@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { adminApi, apiClient, customerApi, login, phone, uid } from './helpers.mjs';
+import { adminApi, apiClient, customerApi, login, phone, pickModule, uid } from './helpers.mjs';
 
 test('a laundry pickup is booked, weighed, priced and returned', async ({ page, request }) => {
     const admin = await adminApi(request);
@@ -13,6 +13,7 @@ test('a laundry pickup is booked, weighed, priced and returned', async ({ page, 
     const service = `Wash & Fold ${uid()}`;
     await login(page);
     const main = page.getByRole('main');
+    await pickModule(page, 'laundry');
     await page.getByRole('link', { name: 'Laundry services' }).click();
     await main.getByRole('button', { name: 'Add service' }).click();
     const form = page.getByRole('dialog');

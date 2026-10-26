@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
+import { useCurrentModule } from '../lib/moduleContext.jsx';
 import { formatPaise } from '../lib/money.js';
 import { CANCELLABLE, ITEM_EDITABLE, NEXT_ACTION_LABELS, PAYMENT_LABELS, STATUS_LABELS, STATUS_TONES, nextStatus } from '../lib/orders.js';
 import { Badge, ErrorNote, Modal } from '../components/ui.jsx';
@@ -30,6 +31,12 @@ export default function OrderDetail() {
         queryKey: key,
         queryFn: () => api.get(`/admin/orders/${id}`).then((r) => r.data.data)
     });
+
+    // The panel follows the order's module, e.g. when opened from a notification.
+    const { setModule } = useCurrentModule();
+    useEffect(() => {
+        if (order?.module) setModule(order.module);
+    }, [order?.module, setModule]);
 
     // Action responses aren't populated (zone, customer), so refetch rather than merge them in.
     const onDone = () => {

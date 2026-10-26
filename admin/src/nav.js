@@ -3,17 +3,29 @@ import {
     Package, Settings, ShieldCheck, Shirt, ShoppingBag, Users, WashingMachine
 } from 'lucide-react';
 
+const PRODUCT_ONLY = ['grocery', 'produce', 'electronics'];
+const LAUNDRY_ONLY = ['laundry'];
+
+/** Where a page sends you when you switch to a module it doesn't apply to. */
+export const MODULE_EQUIVALENT = {
+    '/orders': '/bookings',
+    '/bookings': '/orders',
+    '/products': '/laundry-services',
+    '/laundry-services': '/products'
+};
+
 /**
  * Sidebar entries, grouped under section headings. `section` is the
- * permission section that gates the entry.
+ * permission section that gates the entry; `modules`, when set, limits the
+ * entry to those modules (laundry has bookings, not orders or products).
  */
 export const NAV_GROUPS = [
     { title: 'Home', items: [{ to: '/', label: 'Dashboard', section: 'dashboard', icon: LayoutDashboard }] },
     {
         title: 'Operations',
         items: [
-            { to: '/orders', label: 'Orders', section: 'orders', icon: ShoppingBag },
-            { to: '/bookings', label: 'Laundry bookings', section: 'bookings', icon: WashingMachine },
+            { to: '/orders', label: 'Orders', section: 'orders', icon: ShoppingBag, modules: PRODUCT_ONLY },
+            { to: '/bookings', label: 'Laundry bookings', section: 'bookings', icon: WashingMachine, modules: LAUNDRY_ONLY },
             { to: '/customers', label: 'Customers', section: 'customers', icon: Users }
         ]
     },
@@ -21,9 +33,9 @@ export const NAV_GROUPS = [
         title: 'Catalogue',
         items: [
             { to: '/categories', label: 'Categories', section: 'catalog', icon: FolderTree },
-            { to: '/products', label: 'Products', section: 'catalog', icon: Package },
-            { to: '/inventory', label: 'Inventory', section: 'inventory', icon: Boxes },
-            { to: '/laundry-services', label: 'Laundry services', section: 'catalog', icon: Shirt }
+            { to: '/products', label: 'Products', section: 'catalog', icon: Package, modules: PRODUCT_ONLY },
+            { to: '/inventory', label: 'Inventory', section: 'inventory', icon: Boxes, modules: PRODUCT_ONLY },
+            { to: '/laundry-services', label: 'Laundry services', section: 'catalog', icon: Shirt, modules: LAUNDRY_ONLY }
         ]
     },
     {
@@ -37,7 +49,7 @@ export const NAV_GROUPS = [
         title: 'Marketing',
         items: [
             { to: '/banners', label: 'Banners', section: 'banners', icon: Megaphone },
-            { to: '/coupons', label: 'Coupons', section: 'coupons', icon: BadgePercent }
+            { to: '/coupons', label: 'Coupons', section: 'coupons', icon: BadgePercent, modules: PRODUCT_ONLY }
         ]
     },
     {

@@ -18,6 +18,8 @@ export const SERVER_ENV = {
     CORS_ORIGINS: `http://localhost:${PANEL_PORT}`,
     JWT_ACCESS_SECRET: 'e2e-access-secret-0123456789-0123456789-0123456789',
     JWT_REFRESH_SECRET: 'e2e-refresh-secret-0123456789-0123456789-012345678',
+    // The suite signs in far more often than a person would; the API tests cover the limit itself.
+    AUTH_RATE_LIMIT_MAX: '1000',
     USE_DEFAULT_OTP: 'true',
     DEFAULT_OTP_CODE: OTP,
     SMS_PROVIDER: 'console',

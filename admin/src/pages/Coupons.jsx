@@ -2,19 +2,20 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
+import { useCurrentModule } from '../lib/moduleContext.jsx';
 import { formatPaise, paiseToRupees, rupeesToPaise } from '../lib/money.js';
 import { Badge, ErrorNote, Modal, useModules } from '../components/ui.jsx';
 
 const toLocalInput = (d) => (d ? new Date(new Date(d).getTime() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '');
 
-const toForm = (c) => ({
+const toForm = (c, module) => ({
     code: c?.code ?? '',
     description: c?.description ?? '',
     type: c?.type ?? 'percent',
     value: c ? (c.type === 'flat' ? paiseToRupees(c.value) : String(c.value)) : '',
     maxDiscount: paiseToRupees(c?.maxDiscountPaise),
     minOrder: c?.minOrderPaise ? paiseToRupees(c.minOrderPaise) : '',
-    modules: c?.modules ?? [],
+    modules: c?.modules ?? [module],
     validFrom: toLocalInput(c?.validFrom),
     validTo: toLocalInput(c?.validTo),
     usageLimit: c?.usageLimit ? String(c.usageLimit) : '',
@@ -42,7 +43,8 @@ const status = (c) => {
 function CouponForm({ coupon, onDone }) {
     const queryClient = useQueryClient();
     const { data: modules = [] } = useModules();
-    const [form, setForm] = useState(toForm(coupon));
+    const { module } = useCurrentModule();
+    const [form, setForm] = useState(() => toForm(coupon, module));
     const [formError, setFormError] = useState('');
     const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
@@ -165,10 +167,14 @@ export default function Coupons() {
     const { can } = useAuth();
     const queryClient = useQueryClient();
     const [editing, setEditing] = useState(null);
-    const { data: coupons = [], isLoading, error } = useQuery({
+    const { module, modules } = useCurrentModule();
+    const name = modules.find((m) => m.key === module)?.name ?? module;
+    const { data: all = [], isLoading, error } = useQuery({
         queryKey: ['coupons'],
         queryFn: () => api.get('/admin/coupons').then((r) => r.data.data)
     });
+    // A coupon with no modules applies everywhere, so it shows under every module.
+    const coupons = all.filter((c) => !c.modules.length || c.modules.includes(module));
     const remove = useMutation({
         mutationFn: (id) => api.delete(`/admin/coupons/${id}`),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['coupons'] })
@@ -179,7 +185,7 @@ export default function Coupons() {
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-semibold">Coupons</h1>
-                    <p className="text-sm text-slate-500">One coupon per order; coupons don't stack.</p>
+                    <p className="text-sm text-slate-500">Coupons that work on {name} orders. One coupon per order; coupons don't stack.</p>
                 </div>
                 {can('coupons', 'create') && <button type="button" className="btn-primary" onClick={() => setEditing({})}>Add coupon</button>}
             </div>
@@ -198,12 +204,12 @@ export default function Coupons() {
                     </thead>
                     <tbody>
                         {isLoading && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">Loading…</td></tr>}
-                        {!isLoading && coupons.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No coupons yet.</td></tr>}
+                        {!isLoading && coupons.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No coupons for {name} yet.</td></tr>}
                         {coupons.map((c) => (
                             <tr key={c._id} className="border-t border-slate-100">
                                 <td className="px-4 py-3 font-mono font-medium">{c.code}</td>
                                 <td className="px-4 py-3">{describe(c)}{c.firstOrderOnly && <span className="block text-xs text-slate-500">First order only</span>}</td>
-                                <td className="px-4 py-3 text-slate-600">{c.modules.length ? c.modules.join(', ') : 'Everything'}</td>
+                                <td className="px-4 py-3 text-slate-600">{c.modules.length ? c.modules.map((k) => modules.find((m) => m.key === k)?.name ?? k).join(', ') : 'All modules'}</td>
                                 <td className="px-4 py-3 tabular-nums">{c.usedCount}{c.usageLimit != null && ` / ${c.usageLimit}`}</td>
                                 <td className="px-4 py-3">{status(c)}</td>
                                 <td className="whitespace-nowrap px-4 py-3 text-right">

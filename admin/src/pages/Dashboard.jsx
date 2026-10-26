@@ -3,7 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
+import { BOOKING_LABELS } from '../lib/bookings.js';
 import { formatPaise } from '../lib/money.js';
+import { useCurrentModule } from '../lib/moduleContext.jsx';
+import { STATUS_LABELS } from '../lib/orders.js';
 import { ErrorNote } from '../components/ui.jsx';
 import { Boxes, CalendarDays, ClipboardList, IndianRupee, Package, Scale, TriangleAlert, Users } from 'lucide-react';
 
@@ -63,7 +66,7 @@ function Panel({ title, sub, children, className = '' }) {
  * today's value labelled on its cap, every value in the tooltip and the
  * screen-reader table.
  */
-function WeekChart({ daily }) {
+function WeekChart({ daily, noun }) {
     const [hover, setHover] = useState(null);
     // Two equal steps of a round size (1, 2, 5, 10, 20, 50…) so the midline label is exact.
     const max = Math.max(1, ...daily.map((d) => d.orders));
@@ -73,7 +76,7 @@ function WeekChart({ daily }) {
     const today = daily.at(-1);
 
     return (
-        <Panel title="Orders, last 7 days" sub="Orders and laundry bookings, excluding cancelled">
+        <Panel title={`${noun[0].toUpperCase()}${noun.slice(1)}, last 7 days`} sub="Excluding cancelled">
             <div className="relative flex h-56 gap-2">
                 <div className="flex w-6 flex-col justify-between pb-6 text-right text-[11px] tabular-nums text-slate-400" aria-hidden="true">
                     {ticks.map((t) => <span key={t}>{t}</span>)}
@@ -106,7 +109,7 @@ function WeekChart({ daily }) {
                                     {hover === i && (
                                         <div className="pointer-events-none absolute bottom-full z-10 mb-1 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs text-white shadow">
                                             <div className="font-medium">{longDay(d.date)}</div>
-                                            <div>{d.orders} orders · {formatPaise(d.revenuePaise)}</div>
+                                            <div>{d.orders} {noun} · {formatPaise(d.revenuePaise)}</div>
                                         </div>
                                     )}
                                 </div>
@@ -120,8 +123,8 @@ function WeekChart({ daily }) {
             </div>
 
             <table className="sr-only">
-                <caption>Orders per day, last 7 days</caption>
-                <thead><tr><th>Date</th><th>Orders</th><th>Value</th></tr></thead>
+                <caption>{noun} per day, last 7 days</caption>
+                <thead><tr><th>Date</th><th>{noun}</th><th>Value</th></tr></thead>
                 <tbody>
                     {daily.map((d) => <tr key={d.date}><td>{d.date}</td><td>{d.orders}</td><td>{formatPaise(d.revenuePaise)}</td></tr>)}
                 </tbody>
@@ -131,27 +134,63 @@ function WeekChart({ daily }) {
     );
 }
 
+/** Open work by status, in workflow order, linking to the filtered list. */
+function OpenByStatus({ counts, labels, to }) {
+    const rows = Object.keys(labels).filter((s) => counts[s]);
+    if (!rows.length) return <p className="text-sm text-slate-500">Nothing open right now.</p>;
+    return (
+        <ul className="divide-y divide-slate-100 text-sm">
+            {rows.map((s) => (
+                <li key={s} className="flex items-center justify-between py-2.5">
+                    {to ? <Link to={`${to}?status=${s}`} className="hover:underline">{labels[s]}</Link> : <span>{labels[s]}</span>}
+                    <span className="font-semibold tabular-nums">{counts[s]}</span>
+                </li>
+            ))}
+        </ul>
+    );
+}
+
 export default function Dashboard() {
     const { user, can } = useAuth();
+    const { module, modules } = useCurrentModule();
     const { data: d, isLoading, error } = useQuery({
-        queryKey: ['dashboard'],
-        queryFn: () => api.get('/admin/dashboard').then((r) => r.data.data),
+        queryKey: ['dashboard', module],
+        queryFn: () => api.get('/admin/dashboard', { params: { module } }).then((r) => r.data.data),
         refetchInterval: 60_000
     });
+    const name = modules.find((m) => m.key === module)?.name ?? MODULE_NAMES[module];
+    const isLaundry = module === 'laundry';
+    const catalogue = d?.catalogue.byModule[0];
 
     return (
         <div className="space-y-6">
             <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
                 <div className="border-b border-neutral-200 bg-neutral-50/70 px-5 py-5 sm:px-6">
-                    <div className="text-xs font-medium tracking-[0.18em] text-neutral-500 uppercase">Admin overview</div>
+                    <div className="text-xs font-medium tracking-[0.18em] text-neutral-500 uppercase">{name} overview</div>
                     <h1 className="mt-1 text-2xl font-semibold sm:text-[28px]">Welcome, {user.name}</h1>
-                    <p className="mt-1 text-sm text-slate-500">{user.role === 'ops' ? `Your modules: ${user.modules.map((m) => MODULE_NAMES[m]).join(', ')}` : 'All modules'} · updates every minute</p>
+                    <p className="mt-1 text-sm text-slate-500">Showing {name} only · switch module in the sidebar · updates every minute</p>
                 </div>
 
                 <div className="space-y-4 p-5 sm:p-6">
                     <ErrorNote error={error} />
                     {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-                    {d && (
+                    {d && isLaundry && (
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <Tile label="Bookings today" value={d.today.orders} sub={formatPaise(d.today.revenuePaise)} icon={IndianRupee} tone="emerald" />
+                            <Tile
+                                label="New pickup requests"
+                                value={d.bookings.newRequests}
+                                sub={`${d.bookings.open} open in total`}
+                                to={can('bookings') ? '/bookings' : undefined}
+                                icon={ClipboardList}
+                                tone="sky"
+                            />
+                            <Tile label="Laundry to weigh" value={d.bookings.toWeigh} sub="picked up, not yet weighed" to={can('bookings') ? '/bookings' : undefined} icon={Scale} tone="violet" />
+                            <Tile label="Bookings this week" value={d.week.orders} sub={formatPaise(d.week.revenuePaise)} icon={CalendarDays} tone="amber" />
+                            <Tile label="App customers" value={d.customers.total} sub={`${d.customers.newThisWeek} joined this week · all modules`} to={user.role === 'admin' && can('customers') ? '/customers' : undefined} icon={Users} tone="cyan" />
+                        </div>
+                    )}
+                    {d && !isLaundry && (
                         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                             <Tile label="Orders today" value={d.today.orders} sub={formatPaise(d.today.revenuePaise)} icon={IndianRupee} tone="emerald" />
                             <Tile
@@ -162,18 +201,7 @@ export default function Dashboard() {
                                 icon={ClipboardList}
                                 tone="sky"
                             />
-                            {d.bookings ? (
-                                <Tile
-                                    label="Laundry to weigh"
-                                    value={d.bookings.toWeigh}
-                                    sub={`${d.bookings.newRequests} new · ${d.bookings.open} open`}
-                                    to={can('bookings') ? '/bookings' : undefined}
-                                    icon={Scale}
-                                    tone="violet"
-                                />
-                            ) : (
-                                <Tile label="Orders this week" value={d.week.orders} sub={formatPaise(d.week.revenuePaise)} icon={CalendarDays} tone="violet" />
-                            )}
+                            <Tile label="Orders this week" value={d.week.orders} sub={formatPaise(d.week.revenuePaise)} icon={CalendarDays} tone="violet" />
                             <Tile
                                 label="Low or out of stock"
                                 value={d.catalogue.lowStockVariants}
@@ -182,24 +210,15 @@ export default function Dashboard() {
                                 icon={TriangleAlert}
                                 tone="rose"
                             />
-                            {d.catalogue.byModule.map((m, i) => (
-                                <Tile
-                                    key={m.module}
-                                    label={`${MODULE_NAMES[m.module]} products`}
-                                    value={m.active}
-                                    sub={`${m.outOfStock} out of stock · ${m.products - m.active} hidden`}
-                                    icon={Boxes}
-                                    tone={['amber', 'lime', 'orange', 'cyan'][i % 4]}
-                                />
-                            ))}
                             <Tile
-                                label="Customers"
-                                value={d.customers.total}
-                                sub={`${d.customers.newThisWeek} joined this week`}
-                                to={user.role === 'admin' && can('customers') ? '/customers' : undefined}
-                                icon={Users}
-                                tone="cyan"
+                                label="Products"
+                                value={catalogue?.active ?? 0}
+                                sub={`${catalogue?.outOfStock ?? 0} out of stock · ${(catalogue?.products ?? 0) - (catalogue?.active ?? 0)} hidden`}
+                                to={can('catalog') ? '/products' : undefined}
+                                icon={Boxes}
+                                tone="amber"
                             />
+                            <Tile label="App customers" value={d.customers.total} sub={`${d.customers.newThisWeek} joined this week · all modules`} to={user.role === 'admin' && can('customers') ? '/customers' : undefined} icon={Users} tone="cyan" />
                         </div>
                     )}
                 </div>
@@ -207,22 +226,13 @@ export default function Dashboard() {
 
             {d && (
                 <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-                    <WeekChart daily={d.week.daily} />
-                    <Panel title="By module" sub="Last 7 days">
-                        <table className="w-full text-sm">
-                            <thead className="text-left">
-                                <tr><th className="pb-2">Module</th><th className="pb-2 text-right">Orders</th><th className="pb-2 text-right">Value</th></tr>
-                            </thead>
-                            <tbody>
-                                {d.week.byModule.map((m) => (
-                                    <tr key={m.module} className="border-t border-slate-100">
-                                        <td className="py-2.5">{MODULE_NAMES[m.module]}</td>
-                                        <td className="py-2.5 text-right tabular-nums">{m.orders}</td>
-                                        <td className="py-2.5 text-right font-medium tabular-nums">{formatPaise(m.revenuePaise)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                    <WeekChart daily={d.week.daily} noun={isLaundry ? 'bookings' : 'orders'} />
+                    <Panel title={isLaundry ? 'Open bookings' : 'Open orders'} sub="By status">
+                        {isLaundry ? (
+                            <OpenByStatus counts={d.bookings.byStatus} labels={BOOKING_LABELS} to={can('bookings') ? '/bookings' : undefined} />
+                        ) : (
+                            <OpenByStatus counts={d.openOrders.byStatus} labels={STATUS_LABELS} to={can('orders') ? '/orders' : undefined} />
+                        )}
                     </Panel>
                 </div>
             )}

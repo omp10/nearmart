@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
+import { useCurrentModule } from '../lib/moduleContext.jsx';
 import { BOOKING_ACTIONS, BOOKING_CANCELLABLE, BOOKING_LABELS, BOOKING_TONES, RETURN_SLOT_EDITABLE, formatQty, nextBookingStatus } from '../lib/bookings.js';
 import { formatPaise } from '../lib/money.js';
 import { PAYMENT_LABELS } from '../lib/orders.js';
@@ -124,6 +125,10 @@ export default function BookingDetail() {
         queryKey: key,
         queryFn: () => api.get(`/admin/laundry/bookings/${id}`).then((r) => r.data.data)
     });
+
+    // Bookings are laundry's; the panel follows, e.g. when opened from a notification.
+    const { setModule } = useCurrentModule();
+    useEffect(() => setModule('laundry'), [setModule]);
     const refresh = () => {
         setDialog(null);
         queryClient.invalidateQueries({ queryKey: key });

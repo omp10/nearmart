@@ -13,6 +13,8 @@ test('banners: upload an image, schedule, and the app sees only live ones', asyn
     await login(page);
     const main = page.getByRole('main');
     await page.getByRole('link', { name: 'Banners' }).click();
+    // The shared home screen, which the app's default banner request returns.
+    await main.getByRole('tab', { name: 'App home screen' }).click();
     await main.getByRole('button', { name: 'Add banner' }).click();
     const form = page.getByRole('dialog');
     await form.getByLabel(/Title/).fill(title);

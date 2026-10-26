@@ -1,6 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
+import { useAuth } from '../auth/AuthProvider.jsx';
 import { useModules } from '../components/ui.jsx';
+import { MODULE_EQUIVALENT, NAV_GROUPS } from '../nav.js';
+
+const NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+/** List pages whose sub-pages show one module's record (an order, a product, a booking). */
+const MODULE_RECORDS = ['/orders', '/products', '/bookings'];
 
 /**
  * The business module the panel is focused on (Grocery, Produce, Laundry,
@@ -37,7 +43,35 @@ export function ModuleProvider({ children }) {
         if (modules.length && !modules.some((m) => m.key === module)) setModule(modules[0].key);
     }, [modules, module, setModule]);
 
-    const value = useMemo(() => ({ module, setModule, modules }), [module, setModule, modules]);
+    const { can } = useAuth();
+    const navigate = useNavigate();
+
+    /**
+     * What the module tabs call: switch, then leave pages that don't belong to
+     * the new module (Orders → Laundry bookings, an old module's order or
+     * product → that list). Detail pages call plain setModule to follow the
+     * record they show.
+     */
+    const chooseModule = useCallback(
+        (key) => {
+            setModule(key);
+            // Read the address bar, not router state: while a lazily loaded page is
+            // still arriving, the router's location lags behind the URL.
+            const { pathname } = window.location;
+            const root = `/${pathname.split('/')[1]}`;
+            const item = NAV_ITEMS.find((i) => i.to === root);
+            const opens = (i) => i && (!i.modules || i.modules.includes(key)) && can(i.section);
+            if (item && !opens(item)) {
+                const swap = NAV_ITEMS.find((i) => i.to === MODULE_EQUIVALENT[root]);
+                navigate(opens(swap) ? swap.to : '/');
+            } else if (MODULE_RECORDS.includes(root) && pathname !== root) {
+                navigate(root);
+            }
+        },
+        [setModule, navigate, can]
+    );
+
+    const value = useMemo(() => ({ module, setModule, chooseModule, modules }), [module, setModule, chooseModule, modules]);
     return <ModuleContext.Provider value={value}>{children}</ModuleContext.Provider>;
 }
 
@@ -54,7 +88,7 @@ export const PRODUCT_MODULES = ['grocery', 'produce', 'electronics'];
  * `productOnly` hides Laundry for pages about products.
  */
 export function ModuleTabs({ productOnly = false }) {
-    const { module, setModule, modules } = useCurrentModule();
+    const { module, chooseModule, modules } = useCurrentModule();
     const list = productOnly ? modules.filter((m) => m.key !== 'laundry') : modules;
     if (list.length < 2) return null;
     return (
@@ -65,7 +99,7 @@ export function ModuleTabs({ productOnly = false }) {
                     type="button"
                     role="tab"
                     aria-selected={module === m.key}
-                    onClick={() => setModule(m.key)}
+                    onClick={() => chooseModule(m.key)}
                     className={`rounded-md px-3 py-1.5 text-sm font-medium ${module === m.key ? 'bg-white shadow-sm' : 'text-slate-600'}`}
                 >
                     {m.name}

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, errorMessage } from '../lib/api.js';
+import { useCurrentModule } from '../lib/moduleContext.jsx';
 import { formatPaise } from '../lib/money.js';
 import { ErrorNote } from '../components/ui.jsx';
 
@@ -23,7 +24,10 @@ export default function Reports() {
     const [type, setType] = useState('orders');
     const [from, setFrom] = useState(istDaysAgo(6));
     const [to, setTo] = useState(istDaysAgo(0));
-    const [module, setModule] = useState('');
+    // Starts on the module the panel is focused on; the select can widen it to all.
+    const { module: current } = useCurrentModule();
+    const [module, setModule] = useState(current);
+    useEffect(() => setModule(current), [current]);
     const [downloading, setDownloading] = useState('');
     const [downloadError, setDownloadError] = useState('');
     const report = REPORTS.find((r) => r.type === type);

@@ -16,9 +16,10 @@ test.describe('catalogue', () => {
         await page.reload();
         await expect(moduleTab(page, 'produce')).toHaveAttribute('aria-checked', 'true');
 
-        // Laundry has no products: the products page says where to go instead.
+        // Laundry has no products: the menu drops the entry, and the page itself says where to go.
         await pickModule(page, 'laundry');
-        await page.getByRole('link', { name: 'Products', exact: true }).click();
+        await expect(page.getByRole('link', { name: 'Products', exact: true })).toHaveCount(0);
+        await page.goto('/products');
         await expect(page.getByText('Laundry has no products')).toBeVisible();
     });
 

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { ForbiddenError } from '../../lib/errors.js';
 import { ok } from '../../lib/response.js';
 import { validate } from '../../lib/validate.js';
 import { allowedModules, authenticate, requirePermission, requireStaff } from '../../middleware/auth.js';
@@ -10,9 +11,13 @@ import { REPORT_TYPES, runReport, toCsv, toXlsx } from './report.service.js';
 const router = Router();
 router.use(authenticate, requireStaff());
 
-router.get('/dashboard', async (req, res) => {
-    // Everyone signed in to the panel gets the dashboard, limited to their modules.
-    ok(res, await getDashboard({ modules: allowedModules(req) }));
+router.get('/dashboard', validate(z.object({ module: z.enum(BUSINESS_MODULES).optional() }), 'query'), async (req, res) => {
+    // Everyone signed in to the panel gets the dashboard, limited to their modules;
+    // `module` narrows it to the one the panel is focused on.
+    const allowed = allowedModules(req);
+    const { module } = req.validatedQuery;
+    if (module && allowed && !allowed.includes(module)) throw new ForbiddenError(`No access to the ${module} module`);
+    ok(res, await getDashboard({ modules: module ? [module] : allowed }));
 });
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');

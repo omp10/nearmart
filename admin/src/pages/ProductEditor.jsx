@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
 import { paiseToRupees, rupeesToPaise } from '../lib/money.js';
 import { ErrorNote, ImageUpload, flattenTree, useCategoryTree, useModules } from '../components/ui.jsx';
+import { useCurrentModule } from '../lib/moduleContext.jsx';
 
 const UNITS = ['kg', 'g', 'l', 'ml', 'piece', 'pack', 'bunch', 'dozen', 'box'];
 
@@ -109,6 +110,7 @@ export default function ProductEditor() {
     const queryClient = useQueryClient();
     const { can } = useAuth();
     const { data: modules = [] } = useModules();
+    const { module, setModule } = useCurrentModule();
     const [form, setForm] = useState(null);
     const [formError, setFormError] = useState('');
 
@@ -125,9 +127,10 @@ export default function ProductEditor() {
         if (isEdit && product && loadedId !== product._id) {
             setForm(fromProduct(product));
             setLoadedId(product._id);
+            setModule(product.module);
         }
-        if (!isEdit && !form) setForm(emptyForm(search.get('module') || 'grocery'));
-    }, [isEdit, product, loadedId, form, search]);
+        if (!isEdit && !form) setForm(emptyForm(search.get('module') || module));
+    }, [isEdit, product, loadedId, form, search, module, setModule]);
 
     const { data: tree = [] } = useCategoryTree(form?.module);
 
@@ -204,8 +207,8 @@ export default function ProductEditor() {
                             id="p-module"
                             className="input"
                             value={form.module}
-                            disabled={isEdit}
-                            onChange={(e) => set({ module: e.target.value, category: '' })}
+                            disabled
+                            title="A product stays in its module; switch module in the sidebar to add one elsewhere"
                         >
                             {modules.filter((m) => m.key !== 'laundry').map((m) => <option key={m.key} value={m.key}>{m.name}</option>)}
                         </select>

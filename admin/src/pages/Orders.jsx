@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { api } from '../lib/api.js';
 import { LaundryHasItsOwnPages, ModuleTabs, useCurrentModule } from '../lib/moduleContext.jsx';
 import { formatPaise } from '../lib/money.js';
@@ -24,7 +24,9 @@ const when = (d) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month:
 
 export default function Orders() {
     const { module } = useCurrentModule();
-    const [status, setStatus] = useState('open');
+    const [searchParams] = useSearchParams();
+    // The dashboard links here with ?status= to open one status.
+    const [status, setStatus] = useState(() => searchParams.get('status') || 'open');
     const [q, setQ] = useState('');
     const [slotDate, setSlotDate] = useState('');
     const [page, setPage] = useState(1);

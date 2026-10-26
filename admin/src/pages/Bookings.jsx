@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { api } from '../lib/api.js';
 import { BOOKING_LABELS, BOOKING_TONES, formatQty } from '../lib/bookings.js';
 import { formatPaise } from '../lib/money.js';
@@ -21,7 +21,9 @@ const FILTERS = [
 const ACTIVE = ['placed', 'pickup_scheduled', 'picked_up', 'weighed', 'processing', 'ready', 'out_for_return'];
 
 export default function Bookings() {
-    const [status, setStatus] = useState('active');
+    const [searchParams] = useSearchParams();
+    // The dashboard links here with ?status= to open one status.
+    const [status, setStatus] = useState(() => searchParams.get('status') || 'active');
     const [q, setQ] = useState('');
     const [pickupDate, setPickupDate] = useState('');
     const [page, setPage] = useState(1);

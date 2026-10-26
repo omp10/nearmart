@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
+import { useCurrentModule } from '../lib/moduleContext.jsx';
 import { Badge, ErrorNote, ImageUpload, Modal, useModules } from '../components/ui.jsx';
 
 const toLocalInput = (d) => (d ? new Date(new Date(d).getTime() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '');
@@ -22,13 +23,13 @@ const liveState = (b) => {
     return <Badge tone="green">Live</Badge>;
 };
 
-function BannerForm({ banner, onDone }) {
+function BannerForm({ banner, placement, onDone }) {
     const queryClient = useQueryClient();
     const { data: modules = [] } = useModules();
     const [form, setForm] = useState({
         title: banner?.title ?? '',
         image: banner?.image ?? '',
-        placement: banner?.placement ?? 'home',
+        placement: banner?.placement ?? placement,
         linkType: banner?.link?.type ?? 'none',
         linkValue: banner?.link?.value ?? '',
         sortOrder: String(banner?.sortOrder ?? 0),
@@ -130,7 +131,13 @@ export default function Banners() {
     const { can } = useAuth();
     const queryClient = useQueryClient();
     const [editing, setEditing] = useState(null);
-    const { data: banners = [], isLoading, error } = useQuery({ queryKey: ['banners'], queryFn: () => api.get('/admin/banners').then((r) => r.data.data) });
+    const { module, modules } = useCurrentModule();
+    const name = modules.find((m) => m.key === module)?.name ?? module;
+    // Each module's page has its own banners; the app's home screen is shared by all modules.
+    const [view, setView] = useState('module');
+    const placement = view === 'home' ? 'home' : module;
+    const { data: all = [], isLoading, error } = useQuery({ queryKey: ['banners'], queryFn: () => api.get('/admin/banners').then((r) => r.data.data) });
+    const banners = all.filter((b) => b.placement === placement);
     const remove = useMutation({ mutationFn: (id) => api.delete(`/admin/banners/${id}`), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['banners'] }) });
 
     return (
@@ -138,13 +145,27 @@ export default function Banners() {
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-semibold">Banners</h1>
-                    <p className="text-sm text-slate-500">Promotions on the app's home screen and module pages.</p>
+                    <p className="text-sm text-slate-500">Promotions on the app's {name} page, or on the home screen every module shares.</p>
                 </div>
                 {can('banners', 'create') && <button type="button" className="btn-primary" onClick={() => setEditing({})}>Add banner</button>}
             </div>
+            <div className="flex flex-wrap gap-1" role="tablist" aria-label="Banner placement">
+                {[['module', `${name} page`], ['home', 'App home screen']].map(([value, label]) => (
+                    <button
+                        key={value}
+                        type="button"
+                        role="tab"
+                        aria-selected={view === value}
+                        onClick={() => setView(value)}
+                        className={`rounded-full border px-3 py-1 text-sm ${view === value ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
             <ErrorNote error={error || remove.error} />
             {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-            {!isLoading && banners.length === 0 && <p className="text-sm text-slate-500">No banners yet.</p>}
+            {!isLoading && banners.length === 0 && <p className="text-sm text-slate-500">No banners here yet.</p>}
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {banners.map((b) => (
                     <div key={b._id} className="card space-y-2 p-3">
@@ -166,7 +187,7 @@ export default function Banners() {
                 ))}
             </div>
             <Modal open={Boolean(editing)} title={editing?._id ? 'Edit banner' : 'New banner'} onClose={() => setEditing(null)} wide>
-                {editing && <BannerForm banner={editing._id ? editing : null} onDone={() => setEditing(null)} />}
+                {editing && <BannerForm banner={editing._id ? editing : null} placement={placement} onDone={() => setEditing(null)} />}
             </Modal>
         </div>
     );

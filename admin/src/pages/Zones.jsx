@@ -2,15 +2,16 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
+import { useCurrentModule } from '../lib/moduleContext.jsx';
 import { formatPaise, paiseToRupees, rupeesToPaise } from '../lib/money.js';
 import { Badge, ErrorNote, Modal, useModules } from '../components/ui.jsx';
 
 const parsePincodes = (text) => [...new Set(text.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean))];
 
-const toForm = (z) => ({
+const toForm = (z, module) => ({
     name: z?.name ?? '',
     isActive: z?.isActive ?? true,
-    modules: z?.modules ?? [],
+    modules: z?.modules ?? [module],
     pincodes: (z?.pincodes ?? []).join(', '),
     polygon: z?.polygon?.type ? JSON.stringify(z.polygon) : '',
     priority: String(z?.priority ?? 0),
@@ -36,7 +37,8 @@ const parsePolygon = (text) => {
 function ZoneForm({ zone, onDone }) {
     const queryClient = useQueryClient();
     const { data: modules = [] } = useModules();
-    const [form, setForm] = useState(toForm(zone));
+    const { module } = useCurrentModule();
+    const [form, setForm] = useState(() => toForm(zone, module));
     const [formError, setFormError] = useState('');
     const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
@@ -187,10 +189,14 @@ export default function Zones() {
     const queryClient = useQueryClient();
     const [editing, setEditing] = useState(null);
     const isAdmin = user.role === 'admin';
-    const { data: zones = [], isLoading, error } = useQuery({
+    const { module, modules } = useCurrentModule();
+    const name = modules.find((m) => m.key === module)?.name ?? module;
+    const { data: all = [], isLoading, error } = useQuery({
         queryKey: ['zones'],
         queryFn: () => api.get('/admin/zones').then((r) => r.data.data)
     });
+    // An area can serve several modules; it shows under each of them.
+    const zones = all.filter((zn) => zn.modules.includes(module));
     const remove = useMutation({
         mutationFn: (id) => api.delete(`/admin/zones/${id}`),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['zones'] })
@@ -225,7 +231,7 @@ export default function Zones() {
                     <tbody>
                         {isLoading && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">Loading…</td></tr>}
                         {!isLoading && zones.length === 0 && (
-                            <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No service areas yet. Customers can't order until one exists.</td></tr>
+                            <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No service areas deliver {name} yet. Customers can't order {name} until one does.</td></tr>
                         )}
                         {zones.map((zn) => (
                             <tr key={zn._id} className="border-t border-slate-100">
@@ -233,7 +239,7 @@ export default function Zones() {
                                     {zn.name}
                                     {zn.priority > 0 && <span className="ml-2 text-xs text-slate-400">priority {zn.priority}</span>}
                                 </td>
-                                <td className="px-4 py-3 text-slate-600">{zn.modules.join(', ')}</td>
+                                <td className="px-4 py-3 text-slate-600">{zn.modules.map((k) => modules.find((m) => m.key === k)?.name ?? k).join(', ')}</td>
                                 <td className="px-4 py-3 text-slate-600">
                                     {zn.pincodes.length > 0 && <span>{zn.pincodes.length} pincode{zn.pincodes.length > 1 ? 's' : ''}</span>}
                                     {zn.pincodes.length > 0 && zn.polygon?.type && ' + '}
