@@ -30,6 +30,19 @@ describe('platform', () => {
     });
 });
 
+describe('upload mount path', () => {
+    it('mounts only the path of an absolute UPLOAD_BASE_URL', async () => {
+        const { uploadMountPath } = await import('../src/modules/uploads/storage.service.js');
+        expect(uploadMountPath('/uploads')).toBe('/uploads');
+        expect(uploadMountPath('/uploads/')).toBe('/uploads');
+        expect(uploadMountPath('https://nearmart.example.com/uploads')).toBe('/uploads');
+        expect(uploadMountPath('https://cdn.example.com/media/nearmart/')).toBe('/media/nearmart');
+        // An absolute URL used to be passed to Express as a route and crash the API at startup.
+        const express = (await import('express')).default;
+        expect(() => express().use(uploadMountPath('https://nearmart.example.com/uploads'), (_req, _res, next) => next())).not.toThrow();
+    });
+});
+
 describe('uploads', () => {
     it('stores an image as WebP for staff', async () => {
         const { token } = await loginStaff(await createStaff());

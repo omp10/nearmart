@@ -30,6 +30,13 @@ const resolveInsideRoot = (relativePath) => {
     return absolute;
 };
 
+/**
+ * The local path uploads are served under. UPLOAD_BASE_URL may be absolute
+ * (https://host/uploads, so mobile apps get full URLs); Express mounts only
+ * its path.
+ */
+export const uploadMountPath = (baseUrl) => new URL(baseUrl, 'http://localhost').pathname.replace(/\/+$/, '') || '/';
+
 export const publicUrl = (relativePath) => `${env.UPLOAD_BASE_URL.replace(/\/+$/, '')}/${relativePath}`;
 
 /**

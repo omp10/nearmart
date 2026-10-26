@@ -11,6 +11,7 @@ import { apiLimiter } from './middleware/rateLimit.js';
 import { registerBookingPaymentHandlers } from './modules/laundry/booking.service.js';
 import { registerOrderPaymentHandlers } from './modules/orders/order.service.js';
 import { webhookRouter } from './modules/payments/payment.routes.js';
+import { uploadMountPath } from './modules/uploads/storage.service.js';
 import routes from './routes.js';
 
 export const createApp = () => {
@@ -52,7 +53,7 @@ export const createApp = () => {
 
     // Local uploads in development; nginx serves this path in production.
     if (!env.isProduction) {
-        app.use(env.UPLOAD_BASE_URL, express.static(env.UPLOAD_STORAGE_ROOT, { fallthrough: false, index: false }));
+        app.use(uploadMountPath(env.UPLOAD_BASE_URL), express.static(env.UPLOAD_STORAGE_ROOT, { fallthrough: false, index: false }));
     }
 
     app.use(notFound);
