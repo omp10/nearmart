@@ -5,23 +5,56 @@ import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
 import { formatPaise } from '../lib/money.js';
 import { ErrorNote } from '../components/ui.jsx';
+import { Boxes, CalendarDays, ClipboardList, IndianRupee, Package, Scale, TriangleAlert, Users } from 'lucide-react';
 
 const MODULE_NAMES = { grocery: 'Grocery', produce: 'Vegetables & produce', laundry: 'Laundry', electronics: 'Electrical & electronics' };
 const shortDay = (date) => new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short' });
 const longDay = (date) => new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
 
-function Tile({ label, value, sub, to }) {
+const TONES = {
+    emerald: 'from-emerald-50 border-emerald-100 text-emerald-600',
+    sky: 'from-sky-50 border-sky-100 text-sky-600',
+    amber: 'from-amber-50 border-amber-100 text-amber-600',
+    violet: 'from-violet-50 border-violet-100 text-violet-600',
+    rose: 'from-rose-50 border-rose-100 text-rose-600',
+    cyan: 'from-cyan-50 border-cyan-100 text-cyan-600',
+    lime: 'from-lime-50 border-lime-100 text-lime-600',
+    orange: 'from-orange-50 border-orange-100 text-orange-600'
+};
+
+/** Stat tile: tinted by tone, small-caps label, big figure, icon chip on the right. */
+function Tile({ label, value, sub, to, icon: Icon = Package, tone = 'sky' }) {
+    const tint = TONES[tone];
     const body = (
-        <>
-            <div className="text-sm text-slate-500">{label}</div>
-            <div className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{value}</div>
-            {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
-        </>
+        <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+                <div className="mb-1 truncate text-[10px] font-bold tracking-[0.18em] text-neutral-500 uppercase">{label}</div>
+                <div className="text-2xl font-bold tabular-nums text-neutral-900">{value}</div>
+                {sub && <div className="mt-0.5 truncate text-xs text-neutral-500">{sub}</div>}
+            </div>
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-neutral-200/70 bg-white shadow-sm">
+                <Icon className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+            </span>
+        </div>
     );
+    const cls = `block min-w-0 rounded-xl border bg-gradient-to-br to-white p-4 shadow-sm ${tint}`;
     return to ? (
-        <Link to={to} className="card block transition hover:border-brand-500">{body}</Link>
+        <Link to={to} className={`${cls} transition hover:-translate-y-0.5 hover:shadow-md`}>{body}</Link>
     ) : (
-        <div className="card">{body}</div>
+        <div className={cls}>{body}</div>
+    );
+}
+
+/** White panel with a ruled header, as on the reference dashboard. */
+function Panel({ title, sub, children, className = '' }) {
+    return (
+        <section className={`rounded-xl border border-neutral-200 bg-white shadow-sm ${className}`}>
+            <div className="border-b border-neutral-200 px-5 py-4">
+                <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
+                {sub && <p className="text-sm text-neutral-500">{sub}</p>}
+            </div>
+            <div className="p-5">{children}</div>
+        </section>
     );
 }
 
@@ -40,11 +73,8 @@ function WeekChart({ daily }) {
     const today = daily.at(-1);
 
     return (
-        <section className="card">
-            <h2 className="font-semibold">Orders, last 7 days</h2>
-            <p className="text-xs text-slate-500">Orders and laundry bookings, excluding cancelled</p>
-
-            <div className="relative mt-4 flex h-48 gap-2">
+        <Panel title="Orders, last 7 days" sub="Orders and laundry bookings, excluding cancelled">
+            <div className="relative flex h-56 gap-2">
                 <div className="flex w-6 flex-col justify-between pb-6 text-right text-[11px] tabular-nums text-slate-400" aria-hidden="true">
                     {ticks.map((t) => <span key={t}>{t}</span>)}
                 </div>
@@ -96,8 +126,8 @@ function WeekChart({ daily }) {
                     {daily.map((d) => <tr key={d.date}><td>{d.date}</td><td>{d.orders}</td><td>{formatPaise(d.revenuePaise)}</td></tr>)}
                 </tbody>
             </table>
-            <p className="mt-2 text-xs text-slate-500">Today: {today.orders} · {formatPaise(today.revenuePaise)}</p>
-        </section>
+            <p className="mt-3 text-xs text-slate-500">Today: {today.orders} · {formatPaise(today.revenuePaise)}</p>
+        </Panel>
     );
 }
 
@@ -111,69 +141,90 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-2xl font-semibold">Welcome, {user.name}</h1>
-                <p className="text-sm text-slate-500">{user.role === 'ops' ? `Your modules: ${user.modules.map((m) => MODULE_NAMES[m]).join(', ')}` : 'All modules'} · updates every minute</p>
-            </div>
-            <ErrorNote error={error} />
-            {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+            <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+                <div className="border-b border-neutral-200 bg-neutral-50/70 px-5 py-5 sm:px-6">
+                    <div className="text-xs font-medium tracking-[0.18em] text-neutral-500 uppercase">Admin overview</div>
+                    <h1 className="mt-1 text-2xl font-semibold sm:text-[28px]">Welcome, {user.name}</h1>
+                    <p className="mt-1 text-sm text-slate-500">{user.role === 'ops' ? `Your modules: ${user.modules.map((m) => MODULE_NAMES[m]).join(', ')}` : 'All modules'} · updates every minute</p>
+                </div>
+
+                <div className="space-y-4 p-5 sm:p-6">
+                    <ErrorNote error={error} />
+                    {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+                    {d && (
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <Tile label="Orders today" value={d.today.orders} sub={formatPaise(d.today.revenuePaise)} icon={IndianRupee} tone="emerald" />
+                            <Tile
+                                label="New orders to accept"
+                                value={d.openOrders.needsAction}
+                                sub={`${d.openOrders.total} open in total`}
+                                to={can('orders') ? '/orders' : undefined}
+                                icon={ClipboardList}
+                                tone="sky"
+                            />
+                            {d.bookings ? (
+                                <Tile
+                                    label="Laundry to weigh"
+                                    value={d.bookings.toWeigh}
+                                    sub={`${d.bookings.newRequests} new · ${d.bookings.open} open`}
+                                    to={can('bookings') ? '/bookings' : undefined}
+                                    icon={Scale}
+                                    tone="violet"
+                                />
+                            ) : (
+                                <Tile label="Orders this week" value={d.week.orders} sub={formatPaise(d.week.revenuePaise)} icon={CalendarDays} tone="violet" />
+                            )}
+                            <Tile
+                                label="Low or out of stock"
+                                value={d.catalogue.lowStockVariants}
+                                sub="variants at or below their alert level"
+                                to={can('inventory') ? '/inventory' : undefined}
+                                icon={TriangleAlert}
+                                tone="rose"
+                            />
+                            {d.catalogue.byModule.map((m, i) => (
+                                <Tile
+                                    key={m.module}
+                                    label={`${MODULE_NAMES[m.module]} products`}
+                                    value={m.active}
+                                    sub={`${m.outOfStock} out of stock · ${m.products - m.active} hidden`}
+                                    icon={Boxes}
+                                    tone={['amber', 'lime', 'orange', 'cyan'][i % 4]}
+                                />
+                            ))}
+                            <Tile
+                                label="Customers"
+                                value={d.customers.total}
+                                sub={`${d.customers.newThisWeek} joined this week`}
+                                to={user.role === 'admin' && can('customers') ? '/customers' : undefined}
+                                icon={Users}
+                                tone="cyan"
+                            />
+                        </div>
+                    )}
+                </div>
+            </section>
 
             {d && (
-                <>
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                        <Tile label="Orders today" value={d.today.orders} sub={formatPaise(d.today.revenuePaise)} />
-                        <Tile
-                            label="New orders to accept"
-                            value={d.openOrders.needsAction}
-                            sub={`${d.openOrders.total} open in total`}
-                            to={can('orders') ? '/orders' : undefined}
-                        />
-                        {d.bookings ? (
-                            <Tile
-                                label="Laundry to weigh"
-                                value={d.bookings.toWeigh}
-                                sub={`${d.bookings.newRequests} new · ${d.bookings.open} open`}
-                                to={can('bookings') ? '/bookings' : undefined}
-                            />
-                        ) : (
-                            <Tile label="Orders this week" value={d.week.orders} sub={formatPaise(d.week.revenuePaise)} />
-                        )}
-                        <Tile
-                            label="Low or out of stock"
-                            value={d.catalogue.lowStockVariants}
-                            sub="variants at or below their alert level"
-                            to={can('inventory') ? '/inventory' : undefined}
-                        />
-                    </div>
-
-                    <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-                        <WeekChart daily={d.week.daily} />
-                        <section className="card">
-                            <h2 className="font-semibold">By module, last 7 days</h2>
-                            <table className="mt-3 w-full text-sm">
-                                <thead className="text-left text-xs text-slate-500">
-                                    <tr><th className="pb-2 font-medium">Module</th><th className="pb-2 text-right font-medium">Orders</th><th className="pb-2 text-right font-medium">Value</th></tr>
-                                </thead>
-                                <tbody>
-                                    {d.week.byModule.map((m) => (
-                                        <tr key={m.module} className="border-t border-slate-100">
-                                            <td className="py-2">{MODULE_NAMES[m.module]}</td>
-                                            <td className="py-2 text-right tabular-nums">{m.orders}</td>
-                                            <td className="py-2 text-right tabular-nums">{formatPaise(m.revenuePaise)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </section>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                        {d.catalogue.byModule.map((m) => (
-                            <Tile key={m.module} label={`${MODULE_NAMES[m.module]} products`} value={m.active} sub={`${m.outOfStock} out of stock · ${m.products - m.active} hidden`} />
-                        ))}
-                        <Tile label="Customers" value={d.customers.total} sub={`${d.customers.newThisWeek} joined this week`} to={user.role === 'admin' && can('customers') ? '/customers' : undefined} />
-                    </div>
-                </>
+                <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+                    <WeekChart daily={d.week.daily} />
+                    <Panel title="By module" sub="Last 7 days">
+                        <table className="w-full text-sm">
+                            <thead className="text-left">
+                                <tr><th className="pb-2">Module</th><th className="pb-2 text-right">Orders</th><th className="pb-2 text-right">Value</th></tr>
+                            </thead>
+                            <tbody>
+                                {d.week.byModule.map((m) => (
+                                    <tr key={m.module} className="border-t border-slate-100">
+                                        <td className="py-2.5">{MODULE_NAMES[m.module]}</td>
+                                        <td className="py-2.5 text-right tabular-nums">{m.orders}</td>
+                                        <td className="py-2.5 text-right font-medium tabular-nums">{formatPaise(m.revenuePaise)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </Panel>
+                </div>
             )}
         </div>
     );

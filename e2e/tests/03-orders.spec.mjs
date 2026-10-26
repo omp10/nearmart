@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { acceptConfirms, adminApi, apiClient, customerApi, login, phone, uid } from './helpers.mjs';
+import { acceptConfirms, adminApi, apiClient, customerApi, login, phone, pickModule, uid } from './helpers.mjs';
 
 /**
  * A customer orders through the API (as the app does); staff take it from
@@ -45,7 +45,7 @@ test('an order goes from the app to delivered, with an unavailable item re-price
     // Staff see the alert and work the order.
     acceptConfirms(page);
     await login(page);
-    await page.getByRole('combobox', { name: 'Module' }).selectOption('grocery');
+    await pickModule(page, 'grocery');
     const bell = page.getByRole('button', { name: /^Notifications/ });
     await expect(bell).toHaveAccessibleName(/unread/);
     await bell.click();

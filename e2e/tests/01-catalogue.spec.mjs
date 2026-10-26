@@ -1,24 +1,23 @@
 import { expect, test } from '@playwright/test';
-import { apiClient, login, uid } from './helpers.mjs';
+import { apiClient, login, moduleTab, pickModule, uid } from './helpers.mjs';
 
 test.describe('catalogue', () => {
     test('the module switcher drives every module page and is remembered', async ({ page }) => {
         await login(page);
-        const switcher = page.getByRole('combobox', { name: 'Module' });
-        await switcher.selectOption('electronics');
+        await pickModule(page, 'electronics');
 
         await page.getByRole('link', { name: 'Categories' }).click();
         await expect(page.getByRole('tab', { name: 'Electrical & Electronics' })).toHaveAttribute('aria-selected', 'true');
 
         // In-page tabs move the header switcher too.
         await page.getByRole('tab', { name: 'Vegetables & Fresh Produce' }).click();
-        await expect(switcher).toHaveValue('produce');
+        await expect(moduleTab(page, 'produce')).toHaveAttribute('aria-checked', 'true');
 
         await page.reload();
-        await expect(page.getByRole('combobox', { name: 'Module' })).toHaveValue('produce');
+        await expect(moduleTab(page, 'produce')).toHaveAttribute('aria-checked', 'true');
 
         // Laundry has no products: the products page says where to go instead.
-        await page.getByRole('combobox', { name: 'Module' }).selectOption('laundry');
+        await pickModule(page, 'laundry');
         await page.getByRole('link', { name: 'Products', exact: true }).click();
         await expect(page.getByText('Laundry has no products')).toBeVisible();
     });
@@ -26,7 +25,7 @@ test.describe('catalogue', () => {
     test('an admin adds categories and a product with variants, prices and stock', async ({ page, request }) => {
         const name = `Spinach ${uid()}`;
         await login(page);
-        await page.getByRole('combobox', { name: 'Module' }).selectOption('produce');
+        await pickModule(page, 'produce');
         await page.getByRole('link', { name: 'Categories' }).click();
 
         // Category, then a subcategory under it.

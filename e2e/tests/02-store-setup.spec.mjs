@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { apiClient, login, uid } from './helpers.mjs';
+import { apiClient, login, pickModule, uid } from './helpers.mjs';
 
 test('an admin sets up a service area, slots, a coupon and contact details', async ({ page, request }) => {
     const pub = apiClient(request);
@@ -30,7 +30,7 @@ test('an admin sets up a service area, slots, a coupon and contact details', asy
     expect(service.modules).toEqual(expect.arrayContaining(['grocery', 'produce']));
 
     // A delivery slot every day for grocery.
-    await page.getByRole('combobox', { name: 'Module' }).selectOption('grocery');
+    await pickModule(page, 'grocery');
     await page.getByRole('link', { name: 'Slots' }).click();
     await main.getByRole('button', { name: 'Add slot rule' }).click();
     const slotForm = page.getByRole('dialog');

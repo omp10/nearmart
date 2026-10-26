@@ -1,24 +1,53 @@
+import {
+    BadgePercent, Boxes, CalendarClock, ChartColumn, FolderTree, LayoutDashboard, MapPinned, Megaphone,
+    Package, Settings, ShieldCheck, Shirt, ShoppingBag, Users, WashingMachine
+} from 'lucide-react';
+
 /**
- * Sidebar entries, in scope order (§7). `section` is the permission section
- * that gates the entry; `ready: false` marks modules not built yet, shown
- * disabled so the panel's shape is visible from Phase 0.
+ * Sidebar entries, grouped under section headings. `section` is the
+ * permission section that gates the entry.
  */
-export const NAV_ITEMS = [
-    { to: '/', label: 'Dashboard', section: 'dashboard', ready: true },
-    { to: '/categories', label: 'Categories', section: 'catalog', ready: true },
-    { to: '/products', label: 'Products', section: 'catalog', ready: true },
-    { to: '/inventory', label: 'Inventory', section: 'inventory', ready: true },
-    { to: '/orders', label: 'Orders', section: 'orders', ready: true },
-    { to: '/bookings', label: 'Laundry bookings', section: 'bookings', ready: true },
-    { to: '/laundry-services', label: 'Laundry services', section: 'catalog', ready: true },
-    { to: '/customers', label: 'Customers', section: 'customers', ready: true },
-    { to: '/zones', label: 'Service areas', section: 'zones', ready: true },
-    { to: '/slots', label: 'Slots', section: 'zones', ready: true },
-    { to: '/banners', label: 'Banners', section: 'banners', ready: true },
-    { to: '/coupons', label: 'Coupons', section: 'coupons', ready: true },
-    { to: '/reports', label: 'Reports', section: 'reports', ready: true },
-    { to: '/settings', label: 'Settings', section: 'settings', ready: true },
-    { to: '/staff', label: 'Staff & roles', section: 'staff', ready: true }
+export const NAV_GROUPS = [
+    { title: 'Home', items: [{ to: '/', label: 'Dashboard', section: 'dashboard', icon: LayoutDashboard }] },
+    {
+        title: 'Operations',
+        items: [
+            { to: '/orders', label: 'Orders', section: 'orders', icon: ShoppingBag },
+            { to: '/bookings', label: 'Laundry bookings', section: 'bookings', icon: WashingMachine },
+            { to: '/customers', label: 'Customers', section: 'customers', icon: Users }
+        ]
+    },
+    {
+        title: 'Catalogue',
+        items: [
+            { to: '/categories', label: 'Categories', section: 'catalog', icon: FolderTree },
+            { to: '/products', label: 'Products', section: 'catalog', icon: Package },
+            { to: '/inventory', label: 'Inventory', section: 'inventory', icon: Boxes },
+            { to: '/laundry-services', label: 'Laundry services', section: 'catalog', icon: Shirt }
+        ]
+    },
+    {
+        title: 'Delivery setup',
+        items: [
+            { to: '/zones', label: 'Service areas', section: 'zones', icon: MapPinned },
+            { to: '/slots', label: 'Slots', section: 'zones', icon: CalendarClock }
+        ]
+    },
+    {
+        title: 'Marketing',
+        items: [
+            { to: '/banners', label: 'Banners', section: 'banners', icon: Megaphone },
+            { to: '/coupons', label: 'Coupons', section: 'coupons', icon: BadgePercent }
+        ]
+    },
+    {
+        title: 'Business',
+        items: [
+            { to: '/reports', label: 'Reports', section: 'reports', icon: ChartColumn },
+            { to: '/settings', label: 'Settings', section: 'settings', icon: Settings },
+            { to: '/staff', label: 'Staff & roles', section: 'staff', icon: ShieldCheck }
+        ]
+    }
 ];
 
 /** Must match PERMISSION_SECTIONS / PERMISSION_ACTIONS / BUSINESS_MODULES in the backend. */

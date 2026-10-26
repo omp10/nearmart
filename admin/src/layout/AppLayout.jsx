@@ -4,58 +4,222 @@ import { NavLink, Outlet, useNavigate } from 'react-router';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
 import { ModuleProvider, useCurrentModule } from '../lib/moduleContext.jsx';
-import { NAV_ITEMS } from '../nav.js';
+import { NAV_GROUPS } from '../nav.js';
+import { Carrot, ChevronDown, LogOut, Menu, Plug, Search, ShoppingBasket, Store, WashingMachine } from 'lucide-react';
 
-function Sidebar({ onNavigate }) {
+const MODULE_TABS = {
+    grocery: { label: 'Grocery', icon: ShoppingBasket },
+    produce: { label: 'Produce', icon: Carrot },
+    laundry: { label: 'Laundry', icon: WashingMachine },
+    electronics: { label: 'Electric', icon: Plug }
+};
+
+const roleLabel = (user) => (user.isSuperAdmin ? 'Super admin' : user.role === 'ops' ? 'Operations' : 'Admin');
+
+/** Nav groups the signed-in user may open, narrowed by a search query. */
+function useNavGroups(query = '') {
     const { can } = useAuth();
+    const q = query.trim().toLowerCase();
     // Everyone gets the dashboard as a landing page; its widgets check their own permissions.
-    const items = NAV_ITEMS.filter((item) => item.to === '/' || can(item.section));
-
-    return (
-        <nav className="flex flex-col gap-1 p-3" aria-label="Main">
-            {items.map((item) =>
-                item.ready ? (
-                    <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.to === '/'}
-                        onClick={onNavigate}
-                        className={({ isActive }) =>
-                            `rounded-lg px-3 py-2 text-sm font-medium ${
-                                isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100'
-                            }`
-                        }
-                    >
-                        {item.label}
-                    </NavLink>
-                ) : (
-                    <span
-                        key={item.to}
-                        className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-400"
-                        title="Coming in a later phase"
-                    >
-                        {item.label}
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">Soon</span>
-                    </span>
-                )
-            )}
-        </nav>
-    );
+    return NAV_GROUPS.map((g) => ({
+        ...g,
+        items: g.items.filter((item) => (item.to === '/' || can(item.section)) && (!q || item.label.toLowerCase().includes(q)))
+    })).filter((g) => g.items.length);
 }
 
-/** Header control choosing the module every module-aware page shows. */
+/** Pill tabs choosing the module every module-aware page shows. */
 function ModuleSwitcher() {
     const { module, setModule, modules } = useCurrentModule();
     if (modules.length < 2) return null;
     return (
-        <label className="flex items-center gap-2 text-sm">
-            <span className="hidden text-slate-500 sm:inline">Module</span>
-            <select className="input w-auto py-1.5 font-medium" aria-label="Module" value={module} onChange={(e) => setModule(e.target.value)}>
-                {modules.map((m) => (
-                    <option key={m.key} value={m.key}>{m.name}{m.isActive ? '' : ' (off)'}</option>
+        <div role="radiogroup" aria-label="Module" className="grid auto-cols-fr grid-flow-col gap-1 rounded-xl border border-neutral-200 bg-white p-1 shadow-sm">
+            {modules.map((m) => {
+                const tab = MODULE_TABS[m.key] ?? { label: m.name, icon: Store };
+                const Icon = tab.icon;
+                const active = m.key === module;
+                return (
+                    <button
+                        key={m.key}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        title={`${m.name}${m.isActive ? '' : ' (off)'}`}
+                        onClick={() => setModule(m.key)}
+                        className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] font-semibold transition ${
+                            active ? 'bg-neutral-900 text-white shadow' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
+                        } ${m.isActive ? '' : 'opacity-60'}`}
+                    >
+                        <Icon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                        <span className="w-full truncate">{tab.label}</span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+function Sidebar({ onNavigate }) {
+    const { user } = useAuth();
+    const [query, setQuery] = useState('');
+    const groups = useNavGroups(query);
+
+    return (
+        <div className="flex h-full flex-col">
+            <div className="flex items-center gap-3 px-5 pt-5 pb-3">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-600 text-lg font-bold text-white shadow-sm">N</div>
+                <div className="min-w-0">
+                    <div className="truncate text-[15px] font-bold text-neutral-900">Nearmart</div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.14em] text-neutral-500 uppercase">
+                        <span className="h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
+                        {roleLabel(user)}
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-3 border-b border-neutral-200 px-4 pb-4">
+                <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.14em] text-neutral-500 uppercase">Admin panel</div>
+                <ModuleSwitcher />
+                <label className="relative block">
+                    <span className="sr-only">Search menu</span>
+                    <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-neutral-400" aria-hidden="true" />
+                    <input type="search" className="input pl-9" placeholder="Search menu…" value={query} onChange={(e) => setQuery(e.target.value)} />
+                </label>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Main">
+                {groups.map((g) => (
+                    <div key={g.title} className="mb-5 last:mb-0">
+                        <div className="mb-1.5 px-3 text-[11px] font-bold tracking-[0.14em] text-neutral-500 uppercase">{g.title}</div>
+                        <div className="flex flex-col gap-0.5">
+                            {g.items.map((item) => (
+                                <NavLink
+                                    key={item.to}
+                                    to={item.to}
+                                    end={item.to === '/'}
+                                    onClick={onNavigate}
+                                    className={({ isActive }) =>
+                                        `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                                            isActive ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
+                                        }`
+                                    }
+                                >
+                                    <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden="true" />
+                                    <span className="truncate">{item.label}</span>
+                                </NavLink>
+                            ))}
+                        </div>
+                    </div>
                 ))}
-            </select>
-        </label>
+                {!groups.length && <p className="px-3 text-sm text-neutral-500">No menu items match.</p>}
+            </nav>
+        </div>
+    );
+}
+
+/** Header search: jumps to any page the user can open. Ctrl+K focuses it. */
+function PageSearch() {
+    const navigate = useNavigate();
+    const [query, setQuery] = useState('');
+    const [open, setOpen] = useState(false);
+    const inputRef = useRef(null);
+    const matches = useNavGroups(query).flatMap((g) => g.items.map((item) => ({ ...item, group: g.title })));
+
+    useEffect(() => {
+        const onKey = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                inputRef.current?.focus();
+            }
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, []);
+
+    const go = (to) => {
+        navigate(to);
+        setQuery('');
+        setOpen(false);
+        inputRef.current?.blur();
+    };
+
+    return (
+        <div className="relative w-full max-w-md">
+            <Search className="pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 text-neutral-400" aria-hidden="true" />
+            <input
+                ref={inputRef}
+                type="search"
+                aria-label="Search pages"
+                placeholder="Search"
+                className="h-10 w-full rounded-full border border-neutral-200 bg-neutral-100 pr-4 pl-10 text-sm outline-none transition placeholder:text-neutral-500 focus:border-neutral-300 focus:bg-white focus:ring-4 focus:ring-neutral-100 sm:pr-20"
+                value={query}
+                onChange={(e) => {
+                    setQuery(e.target.value);
+                    setOpen(true);
+                }}
+                onFocus={() => setOpen(true)}
+                onBlur={() => setOpen(false)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' && matches[0]) go(matches[0].to);
+                    if (e.key === 'Escape') e.currentTarget.blur();
+                }}
+            />
+            <kbd className="pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded-md border border-neutral-200 bg-white px-1.5 py-0.5 font-sans text-[11px] font-medium text-neutral-500 sm:block">Ctrl+K</kbd>
+            {open && query.trim() && (
+                <ul className="absolute inset-x-0 top-full z-30 mt-2 max-h-80 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+                    {matches.map((m) => (
+                        <li key={m.to}>
+                            {/* mousedown fires before the input's blur closes the list. */}
+                            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-100" onMouseDown={(e) => { e.preventDefault(); go(m.to); }}>
+                                <m.icon className="h-4 w-4 text-neutral-500" aria-hidden="true" />
+                                <span className="flex-1">{m.label}</span>
+                                <span className="text-xs text-neutral-400">{m.group}</span>
+                            </button>
+                        </li>
+                    ))}
+                    {!matches.length && <li className="px-3 py-3 text-sm text-neutral-500">No pages match.</li>}
+                </ul>
+            )}
+        </div>
+    );
+}
+
+/** Name, email and sign-out behind the account button in the header. */
+function ProfileMenu() {
+    const { user, logout } = useAuth();
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const close = (e) => !ref.current?.contains(e.target) && setOpen(false);
+        document.addEventListener('mousedown', close);
+        return () => document.removeEventListener('mousedown', close);
+    }, [open]);
+
+    return (
+        <div className="relative" ref={ref}>
+            <button type="button" className="flex items-center gap-3 rounded-xl p-1 text-left hover:bg-neutral-100 sm:pl-3" aria-expanded={open} aria-label="Account menu" onClick={() => setOpen((o) => !o)}>
+                <span className="hidden leading-tight sm:block">
+                    <span className="block text-sm font-semibold text-neutral-900">{user.name}</span>
+                    <span className="block text-xs text-neutral-500">{user.email}</span>
+                </span>
+                <span className="grid h-9 w-9 place-items-center rounded-full bg-neutral-900 text-sm font-semibold text-white sm:hidden">{user.name?.[0]?.toUpperCase()}</span>
+                <ChevronDown className="hidden h-4 w-4 text-neutral-500 sm:block" aria-hidden="true" />
+            </button>
+            {open && (
+                <div className="absolute right-0 z-30 mt-2 w-60 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+                    <div className="border-b border-neutral-100 px-3 py-2.5">
+                        <div className="truncate text-sm font-semibold">{user.name}</div>
+                        <div className="truncate text-xs text-neutral-500">{user.email}</div>
+                        <div className="mt-1 text-[10px] font-semibold tracking-[0.14em] text-neutral-500 uppercase">{roleLabel(user)}</div>
+                    </div>
+                    <button type="button" className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50" onClick={logout}>
+                        <LogOut className="h-4 w-4" aria-hidden="true" />
+                        Sign out
+                    </button>
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -104,7 +268,7 @@ function NotificationBell() {
 
     return (
         <div className="relative" ref={ref}>
-            <button type="button" className="btn-ghost relative px-2" aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            <button type="button" className="relative grid h-10 w-10 place-items-center rounded-full border border-neutral-200 bg-white text-neutral-600 transition hover:bg-neutral-50" aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                     <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
                     <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
@@ -152,13 +316,11 @@ export default function AppLayout() {
 }
 
 function Shell() {
-    const { user, logout } = useAuth();
     const [menuOpen, setMenuOpen] = useState(false);
 
     return (
-        <div className="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
-            <aside className="hidden border-r border-slate-200 bg-white lg:block">
-                <div className="px-6 py-5 text-lg font-semibold text-brand-700">Nearmart</div>
+        <div className="min-h-screen lg:grid lg:grid-cols-[280px_1fr]">
+            <aside className="sticky top-0 hidden h-screen border-r border-neutral-200 bg-white lg:block">
                 <Sidebar />
             </aside>
 
@@ -166,34 +328,28 @@ function Shell() {
                 <div className="fixed inset-0 z-40 lg:hidden">
                     <button
                         type="button"
-                        className="absolute inset-0 bg-slate-900/40"
+                        className="absolute inset-0 bg-neutral-900/40"
                         aria-label="Close menu"
                         onClick={() => setMenuOpen(false)}
                     />
-                    <aside className="relative z-10 h-full w-64 bg-white shadow-xl">
-                        <div className="px-6 py-5 text-lg font-semibold text-brand-700">Nearmart</div>
+                    <aside className="relative z-10 h-full w-72 bg-white shadow-xl">
                         <Sidebar onNavigate={() => setMenuOpen(false)} />
                     </aside>
                 </div>
             )}
 
             <div className="flex min-w-0 flex-col">
-                <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 lg:px-8">
-                    <button type="button" className="btn-ghost lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Open menu">
-                        ☰
+                <header className="sticky top-0 z-20 flex h-[72px] items-center gap-3 border-b border-neutral-200 bg-white/90 px-4 backdrop-blur lg:px-8">
+                    <button type="button" className="btn-ghost px-2 lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Open menu">
+                        <Menu className="h-5 w-5" aria-hidden="true" />
                     </button>
-                    <ModuleSwitcher />
-                    <div className="ml-auto flex items-center gap-3">
+                    <div className="flex min-w-0 flex-1 justify-center">
+                        <PageSearch />
+                    </div>
+                    <div className="flex items-center gap-2 sm:gap-3">
                         <NotificationBell />
-                        <div className="hidden text-right sm:block">
-                            <div className="text-sm font-medium">{user.name}</div>
-                            <div className="text-xs text-slate-500">
-                                {user.isSuperAdmin ? 'Super admin' : user.role === 'ops' ? 'Operations' : 'Admin'}
-                            </div>
-                        </div>
-                        <button type="button" className="btn-ghost" onClick={logout}>
-                            Sign out
-                        </button>
+                        <div className="hidden h-8 w-px bg-neutral-200 sm:block" aria-hidden="true" />
+                        <ProfileMenu />
                     </div>
                 </header>
                 <main className="flex-1 p-4 lg:p-8">

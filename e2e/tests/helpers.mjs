@@ -51,3 +51,11 @@ export const customerApi = async (request, phone, name = 'E2E Customer') => {
 
 /** A random valid Indian mobile number. */
 export const phone = () => `9${String(Math.floor(Math.random() * 1e9)).padStart(9, '0')}`;
+
+const MODULE_TABS = { grocery: 'Grocery', produce: 'Produce', laundry: 'Laundry', electronics: 'Electric' };
+
+/** The sidebar's module tab for a module key. */
+export const moduleTab = (page, key) =>
+    page.getByRole('radiogroup', { name: 'Module' }).getByRole('radio', { name: MODULE_TABS[key], exact: true });
+
+export const pickModule = (page, key) => moduleTab(page, key).click();

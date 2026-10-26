@@ -25,7 +25,7 @@ test('an ops user sees only their module and permissions; access changes and loc
     const packerContext = await browser.newContext();
     const packer = await packerContext.newPage();
     await login(packer, { email, password });
-    await expect(packer.getByRole('combobox', { name: 'Module' })).toHaveCount(0);
+    await expect(packer.getByRole('radiogroup', { name: 'Module' })).toHaveCount(0);
     await expect(packer.getByRole('link', { name: 'Orders', exact: true })).toBeVisible();
     await expect(packer.getByRole('link', { name: 'Products', exact: true })).toHaveCount(0);
     await expect(packer.getByRole('link', { name: 'Staff & roles' })).toHaveCount(0);
