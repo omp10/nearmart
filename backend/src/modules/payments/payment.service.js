@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import Razorpay from 'razorpay';
-import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
 import mongoose from 'mongoose';
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js';
+import { gatewayConfig } from './gateway.config.js';
 import { Payment, WebhookEvent } from './payment.model.js';
 
 /**
@@ -14,10 +14,16 @@ import { Payment, WebhookEvent } from './payment.model.js';
  */
 export const paymentEvents = new EventEmitter();
 
+// One client per key pair, so keys saved from the panel take effect at once.
 let client = null;
-const razorpay = () => {
-    if (!env.razorpayEnabled) throw new AppError('Online payments are not configured', 503);
-    client ??= new Razorpay({ key_id: env.RAZORPAY_KEY_ID, key_secret: env.RAZORPAY_KEY_SECRET });
+let clientKeys = '';
+const razorpay = async () => {
+    const c = await gatewayConfig();
+    if (!c.enabled) throw new AppError('Online payments are not configured', 503);
+    if (clientKeys !== `${c.keyId}:${c.keySecret}`) {
+        client = new Razorpay({ key_id: c.keyId, key_secret: c.keySecret });
+        clientKeys = `${c.keyId}:${c.keySecret}`;
+    }
     return client;
 };
 
@@ -26,9 +32,9 @@ const razorpay = () => {
  * them without network access.
  */
 export const gateway = {
-    createOrder: (params) => razorpay().orders.create(params),
-    fetchPayment: (id) => razorpay().payments.fetch(id),
-    refund: (paymentId, params) => razorpay().payments.refund(paymentId, params)
+    createOrder: async (params) => (await razorpay()).orders.create(params),
+    fetchPayment: async (id) => (await razorpay()).payments.fetch(id),
+    refund: async (paymentId, params) => (await razorpay()).payments.refund(paymentId, params)
 };
 
 /** Constant-time comparison of two hex HMACs. */
@@ -59,7 +65,7 @@ export const createGatewayPayment = async ({ userId, refType, refId, amountPaise
     const payment = await Payment.create({ userId, refType, refId, amountPaise, gatewayOrderId: order.id });
     return {
         paymentId: String(payment._id),
-        keyId: env.RAZORPAY_KEY_ID,
+        keyId: (await gatewayConfig()).keyId,
         gatewayOrderId: order.id,
         amountPaise,
         currency: 'INR'
@@ -87,7 +93,7 @@ const markPaid = async (filter, gatewayPaymentId) => {
  * amount, because the signature says nothing about how much was paid.
  */
 export const verifyClientPayment = async ({ userId, gatewayOrderId, gatewayPaymentId, signature }) => {
-    const expected = hmacHex(env.RAZORPAY_KEY_SECRET || '', `${gatewayOrderId}|${gatewayPaymentId}`);
+    const expected = hmacHex((await gatewayConfig()).keySecret || '', `${gatewayOrderId}|${gatewayPaymentId}`);
     if (!safeEqualHex(expected, signature)) throw new ValidationError('Payment signature is invalid');
 
     const payment = await Payment.findOne({ gatewayOrderId, userId });
@@ -155,9 +161,10 @@ export const initiateRefund = async (paymentId, amountPaise, reason = '') => {
     return { gatewayRefundId: refund.id, amountPaise: amount };
 };
 
-export const verifyWebhookSignature = (rawBody, signature) => {
-    if (!env.RAZORPAY_WEBHOOK_SECRET || !rawBody || !signature) return false;
-    return safeEqualHex(hmacHex(env.RAZORPAY_WEBHOOK_SECRET, rawBody), signature);
+export const verifyWebhookSignature = async (rawBody, signature) => {
+    const { webhookSecret } = await gatewayConfig();
+    if (!webhookSecret || !rawBody || !signature) return false;
+    return safeEqualHex(hmacHex(webhookSecret, rawBody), signature);
 };
 
 /**

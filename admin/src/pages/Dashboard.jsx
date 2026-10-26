@@ -152,14 +152,16 @@ function OpenByStatus({ counts, labels, to }) {
 
 export default function Dashboard() {
     const { user, can } = useAuth();
-    const { module, modules } = useCurrentModule();
+    const { module, modules, isGlobal } = useCurrentModule();
+    // Global: every module the user can see; otherwise just the selected one.
+    const params = isGlobal ? {} : { module };
     const { data: d, isLoading, error } = useQuery({
-        queryKey: ['dashboard', module],
-        queryFn: () => api.get('/admin/dashboard', { params: { module } }).then((r) => r.data.data),
+        queryKey: ['dashboard', params],
+        queryFn: () => api.get('/admin/dashboard', { params }).then((r) => r.data.data),
         refetchInterval: 60_000
     });
-    const name = modules.find((m) => m.key === module)?.name ?? MODULE_NAMES[module];
-    const isLaundry = module === 'laundry';
+    const name = isGlobal ? 'All modules' : (modules.find((m) => m.key === module)?.name ?? MODULE_NAMES[module]);
+    const isLaundry = !isGlobal && module === 'laundry';
     const catalogue = d?.catalogue.byModule[0];
 
     return (
@@ -168,7 +170,7 @@ export default function Dashboard() {
                 <div className="border-b border-neutral-200 bg-neutral-50/70 px-5 py-5 sm:px-6">
                     <div className="text-xs font-medium tracking-[0.18em] text-neutral-500 uppercase">{name} overview</div>
                     <h1 className="mt-1 text-2xl font-semibold sm:text-[28px]">Welcome, {user.name}</h1>
-                    <p className="mt-1 text-sm text-slate-500">Showing {name} only · switch module in the sidebar · updates every minute</p>
+                    <p className="mt-1 text-sm text-slate-500">{isGlobal ? 'Every module together' : `Showing ${name} only`} · switch with the tabs in the sidebar · updates every minute</p>
                 </div>
 
                 <div className="space-y-4 p-5 sm:p-6">
@@ -190,7 +192,19 @@ export default function Dashboard() {
                             <Tile label="App customers" value={d.customers.total} sub={`${d.customers.newThisWeek} joined this week · all modules`} to={user.role === 'admin' && can('customers') ? '/customers' : undefined} icon={Users} tone="cyan" />
                         </div>
                     )}
-                    {d && !isLaundry && (
+                    {d && isGlobal && (
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <Tile label="Orders today" value={d.today.orders} sub={`${formatPaise(d.today.revenuePaise)} · incl. laundry`} icon={IndianRupee} tone="emerald" />
+                            <Tile label="New orders to accept" value={d.openOrders.needsAction} sub={`${d.openOrders.total} open in total`} icon={ClipboardList} tone="sky" />
+                            {d.bookings && <Tile label="Laundry to weigh" value={d.bookings.toWeigh} sub={`${d.bookings.newRequests} new · ${d.bookings.open} open`} icon={Scale} tone="violet" />}
+                            <Tile label="Low or out of stock" value={d.catalogue.lowStockVariants} sub="variants, all product modules" icon={TriangleAlert} tone="rose" />
+                            {d.catalogue.byModule.map((m, i) => (
+                                <Tile key={m.module} label={`${MODULE_NAMES[m.module]} products`} value={m.active} sub={`${m.outOfStock} out of stock · ${m.products - m.active} hidden`} icon={Boxes} tone={['amber', 'lime', 'orange'][i % 3]} />
+                            ))}
+                            <Tile label="Customers" value={d.customers.total} sub={`${d.customers.newThisWeek} joined this week`} to={user.role === 'admin' && can('customers') ? '/customers' : undefined} icon={Users} tone="cyan" />
+                        </div>
+                    )}
+                    {d && !isGlobal && !isLaundry && (
                         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                             <Tile label="Orders today" value={d.today.orders} sub={formatPaise(d.today.revenuePaise)} icon={IndianRupee} tone="emerald" />
                             <Tile
@@ -227,6 +241,24 @@ export default function Dashboard() {
             {d && (
                 <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
                     <WeekChart daily={d.week.daily} noun={isLaundry ? 'bookings' : 'orders'} />
+                    {isGlobal ? (
+                        <Panel title="By module" sub="Last 7 days">
+                            <table className="w-full text-sm">
+                                <thead className="text-left">
+                                    <tr><th className="pb-2">Module</th><th className="pb-2 text-right">Orders</th><th className="pb-2 text-right">Value</th></tr>
+                                </thead>
+                                <tbody>
+                                    {d.week.byModule.map((m) => (
+                                        <tr key={m.module} className="border-t border-slate-100">
+                                            <td className="py-2.5">{MODULE_NAMES[m.module]}</td>
+                                            <td className="py-2.5 text-right tabular-nums">{m.orders}</td>
+                                            <td className="py-2.5 text-right font-medium tabular-nums">{formatPaise(m.revenuePaise)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </Panel>
+                    ) : (
                     <Panel title={isLaundry ? 'Open bookings' : 'Open orders'} sub="By status">
                         {isLaundry ? (
                             <OpenByStatus counts={d.bookings.byStatus} labels={BOOKING_LABELS} to={can('bookings') ? '/bookings' : undefined} />
@@ -234,6 +266,7 @@ export default function Dashboard() {
                             <OpenByStatus counts={d.openOrders.byStatus} labels={STATUS_LABELS} to={can('orders') ? '/orders' : undefined} />
                         )}
                     </Panel>
+                    )}
                 </div>
             )}
         </div>

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
-import { apiClient, customerApi, login, phone, uid } from './helpers.mjs';
+import { apiClient, customerApi, login, phone, pickModule, uid } from './helpers.mjs';
 
 // A valid 1×1 PNG.
 const PNG = Buffer.from(
@@ -13,8 +13,8 @@ test('banners: upload an image, schedule, and the app sees only live ones', asyn
     await login(page);
     const main = page.getByRole('main');
     await page.getByRole('link', { name: 'Banners' }).click();
-    // The shared home screen, which the app's default banner request returns.
-    await main.getByRole('tab', { name: 'App home screen' }).click();
+    // Home screen banners are shared by every module, so they live under Global.
+    await pickModule(page, 'global');
     await main.getByRole('button', { name: 'Add banner' }).click();
     const form = page.getByRole('dialog');
     await form.getByLabel(/Title/).fill(title);

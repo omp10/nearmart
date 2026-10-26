@@ -15,7 +15,7 @@ const toForm = (c, module) => ({
     value: c ? (c.type === 'flat' ? paiseToRupees(c.value) : String(c.value)) : '',
     maxDiscount: paiseToRupees(c?.maxDiscountPaise),
     minOrder: c?.minOrderPaise ? paiseToRupees(c.minOrderPaise) : '',
-    modules: c?.modules ?? [module],
+    modules: c?.modules ?? (module ? [module] : []),
     validFrom: toLocalInput(c?.validFrom),
     validTo: toLocalInput(c?.validTo),
     usageLimit: c?.usageLimit ? String(c.usageLimit) : '',
@@ -43,8 +43,9 @@ const status = (c) => {
 function CouponForm({ coupon, onDone }) {
     const queryClient = useQueryClient();
     const { data: modules = [] } = useModules();
-    const { module } = useCurrentModule();
-    const [form, setForm] = useState(() => toForm(coupon, module));
+    // From Global a new coupon starts on every module; from a module, on that one.
+    const { module, isGlobal } = useCurrentModule();
+    const [form, setForm] = useState(() => toForm(coupon, isGlobal ? null : module));
     const [formError, setFormError] = useState('');
     const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
@@ -167,14 +168,14 @@ export default function Coupons() {
     const { can } = useAuth();
     const queryClient = useQueryClient();
     const [editing, setEditing] = useState(null);
-    const { module, modules } = useCurrentModule();
+    const { module, modules, isGlobal } = useCurrentModule();
     const name = modules.find((m) => m.key === module)?.name ?? module;
     const { data: all = [], isLoading, error } = useQuery({
         queryKey: ['coupons'],
         queryFn: () => api.get('/admin/coupons').then((r) => r.data.data)
     });
     // A coupon with no modules applies everywhere, so it shows under every module.
-    const coupons = all.filter((c) => !c.modules.length || c.modules.includes(module));
+    const coupons = isGlobal ? all : all.filter((c) => !c.modules.length || c.modules.includes(module));
     const remove = useMutation({
         mutationFn: (id) => api.delete(`/admin/coupons/${id}`),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['coupons'] })
@@ -185,7 +186,7 @@ export default function Coupons() {
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-semibold">Coupons</h1>
-                    <p className="text-sm text-slate-500">Coupons that work on {name} orders. One coupon per order; coupons don't stack.</p>
+                    <p className="text-sm text-slate-500">{isGlobal ? 'Every coupon, for all modules.' : `Coupons that work on ${name} orders.`} One coupon per order; coupons don't stack.</p>
                 </div>
                 {can('coupons', 'create') && <button type="button" className="btn-primary" onClick={() => setEditing({})}>Add coupon</button>}
             </div>
@@ -204,7 +205,7 @@ export default function Coupons() {
                     </thead>
                     <tbody>
                         {isLoading && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">Loading…</td></tr>}
-                        {!isLoading && coupons.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No coupons for {name} yet.</td></tr>}
+                        {!isLoading && coupons.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No coupons {isGlobal ? '' : `for ${name} `}yet.</td></tr>}
                         {coupons.map((c) => (
                             <tr key={c._id} className="border-t border-slate-100">
                                 <td className="px-4 py-3 font-mono font-medium">{c.code}</td>

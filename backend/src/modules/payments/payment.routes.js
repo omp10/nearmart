@@ -14,7 +14,7 @@ export const webhookRouter = Router();
 
 webhookRouter.post('/razorpay', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
     const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-    if (!verifyWebhookSignature(rawBody, req.get('x-razorpay-signature'))) {
+    if (!(await verifyWebhookSignature(rawBody, req.get('x-razorpay-signature')))) {
         logger.warn('Razorpay webhook rejected: bad signature');
         return res.status(400).json({ success: false, message: 'Invalid signature' });
     }

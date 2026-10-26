@@ -9,6 +9,7 @@ import { escapeRegex } from '../../lib/pagination.js';
 import { uniqueSlug } from '../../lib/slug.js';
 import { getAddress } from '../customers/customer.service.js';
 import { notify, notifyStaff } from '../notifications/notification.service.js';
+import { gatewayConfig } from '../payments/gateway.config.js';
 import { Payment } from '../payments/payment.model.js';
 import { createGatewayPayment, initiateRefund, paymentEvents } from '../payments/payment.service.js';
 import { assertCheckoutAllowed } from '../settings/settings.service.js';
@@ -125,7 +126,7 @@ export const quoteBooking = async (userId, { addressId, items }) => {
 
 /** Books a pickup. An online booking prepays the estimate; any difference is settled after weighing. */
 export const createBooking = async (userId, { addressId, items, pickupSlotId, instructions = '', pickupNotes = '', paymentMethod }) => {
-    if (paymentMethod === 'online' && !env.razorpayEnabled) throw new ValidationError('Online payment is not available right now');
+    if (paymentMethod === 'online' && !(await gatewayConfig()).enabled) throw new ValidationError('Online payment is not available right now');
     const { address, zone, lines, pricing } = await quoteBooking(userId, { addressId, items });
     if (paymentMethod === 'online' && pricing.totalPaise < 100) throw new ValidationError('Online payment needs a total of at least ₹1');
     await assertCheckoutAllowed({ paymentMethod, totalPaise: pricing.totalPaise });
@@ -373,7 +374,7 @@ export const bookingPaymentDetails = async (userId, id) => {
     const booking = await loadBooking(id, { userId });
     if (booking.status !== 'pending_payment') throw new ConflictError('This booking is not awaiting payment');
     const payment = await Payment.findById(booking.payment.paymentId).lean();
-    return { paymentId: String(payment._id), keyId: env.RAZORPAY_KEY_ID, gatewayOrderId: payment.gatewayOrderId, amountPaise: payment.amountPaise, currency: 'INR', payBy: booking.paymentDueBy };
+    return { paymentId: String(payment._id), keyId: (await gatewayConfig()).keyId, gatewayOrderId: payment.gatewayOrderId, amountPaise: payment.amountPaise, currency: 'INR', payBy: booking.paymentDueBy };
 };
 
 // ─── Reads ───

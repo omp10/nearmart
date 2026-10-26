@@ -78,6 +78,11 @@ const schema = z
         FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
         FIREBASE_SERVICE_ACCOUNT_PATH: z.string().optional(),
 
+        /** 64 hex chars; encrypts secrets saved from the panel (payment gateway keys). */
+        SECRETS_KEY: z
+            .union([z.literal(''), z.string().regex(/^[0-9a-fA-F]{64}$/, 'SECRETS_KEY must be 64 hex characters (32 random bytes)')])
+            .optional(),
+
         RAZORPAY_KEY_ID: z.string().optional(),
         RAZORPAY_KEY_SECRET: z.string().optional(),
         RAZORPAY_WEBHOOK_SECRET: z.string().optional()

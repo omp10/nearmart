@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { ok } from '../../lib/response.js';
 import { validate } from '../../lib/validate.js';
-import { authenticate, requireAdmin, requirePermission } from '../../middleware/auth.js';
+import { authenticate, requireAdmin, requirePermission, requireSuperAdmin } from '../../middleware/auth.js';
+import { clearGateway, describeGateway, saveGateway } from '../payments/gateway.config.js';
 import * as settings from './settings.service.js';
 
 const phone = z.string().trim().max(20);
@@ -45,4 +46,24 @@ adminSettingsRoutes.get('/', requirePermission('settings', 'view'), async (_req,
 
 adminSettingsRoutes.patch('/', requirePermission('settings', 'update'), validate(patchSchema), async (req, res) => {
     ok(res, await settings.updateSettings(req.body), 'Settings saved');
+});
+
+// Payment gateway credentials: super admin only. Secrets go in, never come out.
+const secret = z.string().trim().min(8, 'Too short').max(200);
+const gatewaySchema = z.object({
+    keyId: z.string().trim().regex(/^rzp_(test|live)_[A-Za-z0-9]+$/, 'Key id starts with rzp_test_ or rzp_live_'),
+    keySecret: z.union([z.literal(''), secret]).optional(),
+    webhookSecret: z.union([z.literal(''), secret]).optional()
+});
+
+adminSettingsRoutes.get('/payment-gateway', requireSuperAdmin, async (_req, res) => {
+    ok(res, await describeGateway());
+});
+
+adminSettingsRoutes.put('/payment-gateway', requireSuperAdmin, validate(gatewaySchema), async (req, res) => {
+    ok(res, await saveGateway(req.body, req.auth.id), 'Payment gateway saved');
+});
+
+adminSettingsRoutes.delete('/payment-gateway', requireSuperAdmin, async (_req, res) => {
+    ok(res, await clearGateway(), 'Using the server environment keys');
 });

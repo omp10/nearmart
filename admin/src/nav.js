@@ -3,10 +3,14 @@ import {
     Package, Settings, ShieldCheck, Shirt, ShoppingBag, Users, WashingMachine
 } from 'lucide-react';
 
-const PRODUCT_ONLY = ['grocery', 'produce', 'electronics'];
-const LAUNDRY_ONLY = ['laundry'];
+/** The Global view: things shared by every module (customers, settings, staff). */
+export const GLOBAL = 'global';
+const MODULES = ['grocery', 'produce', 'laundry', 'electronics'];
+const PRODUCT = ['grocery', 'produce', 'electronics'];
+const LAUNDRY = ['laundry'];
+const EVERYWHERE = [GLOBAL, ...MODULES];
 
-/** Where a page sends you when you switch to a module it doesn't apply to. */
+/** Where a page sends you when you switch to a view it doesn't apply to. */
 export const MODULE_EQUIVALENT = {
     '/orders': '/bookings',
     '/bookings': '/orders',
@@ -16,48 +20,54 @@ export const MODULE_EQUIVALENT = {
 
 /**
  * Sidebar entries, grouped under section headings. `section` is the
- * permission section that gates the entry; `modules`, when set, limits the
- * entry to those modules (laundry has bookings, not orders or products).
+ * permission section that gates the entry; `views` lists where it appears:
+ * Global, and/or the modules it applies to (laundry has bookings, not orders
+ * or products). Empty groups are hidden.
  */
 export const NAV_GROUPS = [
-    { title: 'Home', items: [{ to: '/', label: 'Dashboard', section: 'dashboard', icon: LayoutDashboard }] },
+    { title: 'Home', items: [{ to: '/', label: 'Dashboard', section: 'dashboard', icon: LayoutDashboard, views: EVERYWHERE }] },
     {
         title: 'Operations',
         items: [
-            { to: '/orders', label: 'Orders', section: 'orders', icon: ShoppingBag, modules: PRODUCT_ONLY },
-            { to: '/bookings', label: 'Laundry bookings', section: 'bookings', icon: WashingMachine, modules: LAUNDRY_ONLY },
-            { to: '/customers', label: 'Customers', section: 'customers', icon: Users }
+            { to: '/orders', label: 'Orders', section: 'orders', icon: ShoppingBag, views: PRODUCT },
+            { to: '/bookings', label: 'Laundry bookings', section: 'bookings', icon: WashingMachine, views: LAUNDRY }
         ]
     },
     {
         title: 'Catalogue',
         items: [
-            { to: '/categories', label: 'Categories', section: 'catalog', icon: FolderTree },
-            { to: '/products', label: 'Products', section: 'catalog', icon: Package, modules: PRODUCT_ONLY },
-            { to: '/inventory', label: 'Inventory', section: 'inventory', icon: Boxes, modules: PRODUCT_ONLY },
-            { to: '/laundry-services', label: 'Laundry services', section: 'catalog', icon: Shirt, modules: LAUNDRY_ONLY }
+            { to: '/categories', label: 'Categories', section: 'catalog', icon: FolderTree, views: MODULES },
+            { to: '/products', label: 'Products', section: 'catalog', icon: Package, views: PRODUCT },
+            { to: '/inventory', label: 'Inventory', section: 'inventory', icon: Boxes, views: PRODUCT },
+            { to: '/laundry-services', label: 'Laundry services', section: 'catalog', icon: Shirt, views: LAUNDRY }
+        ]
+    },
+    {
+        title: 'People',
+        items: [
+            { to: '/customers', label: 'Customers', section: 'customers', icon: Users, views: [GLOBAL] },
+            { to: '/staff', label: 'Staff & roles', section: 'staff', icon: ShieldCheck, views: [GLOBAL] }
         ]
     },
     {
         title: 'Delivery setup',
         items: [
-            { to: '/zones', label: 'Service areas', section: 'zones', icon: MapPinned },
-            { to: '/slots', label: 'Slots', section: 'zones', icon: CalendarClock }
+            { to: '/zones', label: 'Service areas', section: 'zones', icon: MapPinned, views: EVERYWHERE },
+            { to: '/slots', label: 'Slots', section: 'zones', icon: CalendarClock, views: MODULES }
         ]
     },
     {
         title: 'Marketing',
         items: [
-            { to: '/banners', label: 'Banners', section: 'banners', icon: Megaphone },
-            { to: '/coupons', label: 'Coupons', section: 'coupons', icon: BadgePercent, modules: PRODUCT_ONLY }
+            { to: '/banners', label: 'Banners', section: 'banners', icon: Megaphone, views: EVERYWHERE },
+            { to: '/coupons', label: 'Coupons', section: 'coupons', icon: BadgePercent, views: [GLOBAL, ...PRODUCT] }
         ]
     },
     {
         title: 'Business',
         items: [
-            { to: '/reports', label: 'Reports', section: 'reports', icon: ChartColumn },
-            { to: '/settings', label: 'Settings', section: 'settings', icon: Settings },
-            { to: '/staff', label: 'Staff & roles', section: 'staff', icon: ShieldCheck }
+            { to: '/reports', label: 'Reports', section: 'reports', icon: ChartColumn, views: EVERYWHERE },
+            { to: '/settings', label: 'Settings', section: 'settings', icon: Settings, views: [GLOBAL] }
         ]
     }
 ];

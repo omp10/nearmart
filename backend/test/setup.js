@@ -11,6 +11,7 @@ Object.assign(process.env, {
     RAZORPAY_KEY_ID: 'rzp_test_dummy',
     RAZORPAY_KEY_SECRET: 'razorpay-test-key-secret',
     RAZORPAY_WEBHOOK_SECRET: 'razorpay-test-webhook-secret',
+    SECRETS_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     UPLOAD_STORAGE_ROOT: 'test-uploads'
 });
 
@@ -24,6 +25,8 @@ beforeAll(async () => {
 beforeEach(async () => {
     const collections = await mongoose.connection.db.collections();
     await Promise.all(collections.map((c) => c.deleteMany({})));
+    // Payment gateway credentials are cached in memory; the database was just emptied.
+    (await import('../src/modules/payments/gateway.config.js')).resetGatewayCache();
 });
 
 afterAll(async () => {

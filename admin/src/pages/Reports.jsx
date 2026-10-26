@@ -25,7 +25,8 @@ export default function Reports() {
     const [from, setFrom] = useState(istDaysAgo(6));
     const [to, setTo] = useState(istDaysAgo(0));
     // Starts on the module the panel is focused on; the select can widen it to all.
-    const { module: current } = useCurrentModule();
+    const { module: selected, isGlobal } = useCurrentModule();
+    const current = isGlobal ? '' : selected;
     const [module, setModule] = useState(current);
     useEffect(() => setModule(current), [current]);
     const [downloading, setDownloading] = useState('');

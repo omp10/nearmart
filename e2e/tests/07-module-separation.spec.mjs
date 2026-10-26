@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { adminApi, login, moduleTab, pickModule, uid } from './helpers.mjs';
+import { acceptConfirms, adminApi, login, moduleTab, pickModule, uid } from './helpers.mjs';
 
 /**
  * Each module tab works as its own panel: the menu, every list and the
@@ -31,10 +31,29 @@ test('the menu changes with the module, and pages hand over to their counterpart
     await pickModule(page, 'laundry');
     for (const name of ['Laundry bookings', 'Laundry services']) await expect(navLink(page, name)).toBeVisible();
     for (const name of ['Orders', 'Products', 'Inventory', 'Coupons']) await expect(navLink(page, name)).toHaveCount(0);
-    // Shared pages stay in every module.
-    for (const name of ['Dashboard', 'Customers', 'Categories', 'Service areas', 'Slots', 'Banners', 'Reports']) {
+    // Pages every module has.
+    for (const name of ['Dashboard', 'Categories', 'Service areas', 'Slots', 'Banners', 'Reports']) {
         await expect(navLink(page, name)).toBeVisible();
     }
+    // Global things live only under Global.
+    for (const name of ['Customers', 'Settings', 'Staff & roles']) await expect(navLink(page, name)).toHaveCount(0);
+
+    await pickModule(page, 'global');
+    for (const name of ['Dashboard', 'Customers', 'Staff & roles', 'Service areas', 'Banners', 'Coupons', 'Reports', 'Settings']) {
+        await expect(navLink(page, name)).toBeVisible();
+    }
+    for (const name of ['Orders', 'Laundry bookings', 'Categories', 'Products', 'Inventory', 'Slots']) await expect(navLink(page, name)).toHaveCount(0);
+    await expect(page.getByText('All modules overview')).toBeVisible();
+
+    // Opening a global page from anywhere shows the Global view, and a module page a module.
+    await pickModule(page, 'produce');
+    await page.goto('/customers');
+    await expect(moduleTab(page, 'global')).toHaveAttribute('aria-checked', 'true');
+    await page.goto('/orders');
+    await expect(moduleTab(page, 'produce')).toHaveAttribute('aria-checked', 'true');
+    // Going Global from a module-only page lands on the dashboard.
+    await pickModule(page, 'global');
+    await expect(page).toHaveURL(/\/$/);
 
     // Orders ↔ Laundry bookings, Products ↔ Laundry services.
     await pickModule(page, 'grocery');
@@ -187,22 +206,62 @@ test('coupons, service areas and banners are listed per module', async ({ page, 
     await expect(page.getByRole('dialog').getByLabel('Vegetables & Fresh Produce')).toBeChecked();
     await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
 
-    // Banners: each module's page has its own; the home screen is shared.
+    // Global lists every area and every coupon, and new ones start on no module.
+    await pickModule(page, 'global');
+    await expect(main.getByText(produceArea)).toBeVisible();
+    await main.getByRole('button', { name: 'Add service area' }).click();
+    await expect(page.getByRole('dialog').getByLabel('Vegetables & Fresh Produce')).not.toBeChecked();
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
+    await navLink(page, 'Coupons').click();
+    await expect(main.getByText(electronicsCoupon)).toBeVisible();
+    await expect(main.getByText(everywhereCoupon)).toBeVisible();
+
+    // Banners: each module's page has its own; the home screen, shared by all, is under Global.
     await navLink(page, 'Banners').click();
+    await expect(main.getByText(homeBanner)).toBeVisible();
+    await expect(main.getByText(groceryBanner)).toHaveCount(0);
+    await pickModule(page, 'electronics');
     await expect(main.getByText(groceryBanner)).toHaveCount(0);
     await pickModule(page, 'grocery');
     await expect(main.getByText(groceryBanner)).toBeVisible();
     await expect(main.getByText(homeBanner)).toHaveCount(0);
-    await main.getByRole('tab', { name: 'App home screen' }).click();
-    await expect(main.getByText(homeBanner)).toBeVisible();
-    await expect(main.getByText(groceryBanner)).toHaveCount(0);
 });
 
-test('reports start on the selected module', async ({ page }) => {
+test('reports start on the selected module, or all modules under Global', async ({ page }) => {
     await login(page);
     await pickModule(page, 'produce');
     await navLink(page, 'Reports').click();
     await expect(page.getByRole('combobox', { name: 'Module' })).toHaveValue('produce');
     await pickModule(page, 'electronics');
     await expect(page.getByRole('combobox', { name: 'Module' })).toHaveValue('electronics');
+    await pickModule(page, 'global');
+    await expect(page.getByRole('combobox', { name: 'Module' })).toHaveValue('');
+});
+
+test('the super admin sets the payment gateway keys in Global settings; secrets never come back', async ({ page }) => {
+    acceptConfirms(page);
+    await login(page);
+    await pickModule(page, 'global');
+    await navLink(page, 'Settings').click();
+    const card = page.getByRole('main').locator('form', { has: page.getByRole('heading', { name: 'Payment gateway' }) });
+    await expect(card).toContainText('Not configured');
+
+    await card.getByLabel('Key id').fill('rzp_test_E2Ekeys123');
+    await card.getByLabel('Key secret').fill('e2e-key-secret-AB12');
+    await card.getByLabel('Webhook secret').fill('e2e-webhook-secret-CD34');
+    await card.getByRole('button', { name: 'Save keys' }).click();
+
+    await expect(card).toContainText('Using the keys saved here');
+    await expect(card).toContainText('Test mode');
+    await expect(card).toContainText('ends in AB12');
+    await expect(card).toContainText('ends in CD34');
+    // The secret fields come back empty; the page never holds the saved secrets.
+    await expect(card.getByLabel('Key secret')).toHaveValue('');
+    await page.reload();
+    await expect(card.getByLabel('Key id')).toHaveValue('rzp_test_E2Ekeys123');
+    expect(await page.content()).not.toContain('e2e-key-secret-AB12');
+
+    // Back to the environment's keys (none on the test server).
+    await card.getByRole('button', { name: 'Use environment keys' }).click();
+    await expect(card).toContainText('Not configured');
 });

@@ -61,7 +61,8 @@ SMS_OTP_TEMPLATE=<exact DLT text with {otp}>
 UPLOAD_STORAGE_ROOT=/var/www/nearmart/uploads
 UPLOAD_BASE_URL=https://admin.example.com/uploads
 FIREBASE_SERVICE_ACCOUNT_PATH=/var/www/nearmart/secrets/firebase.json   # chmod 600
-RAZORPAY_KEY_ID=rzp_live_…
+SECRETS_KEY=<32 random bytes, hex>             # lets the super admin save Razorpay keys in Global → Settings
+RAZORPAY_KEY_ID=rzp_live_…                     # optional once keys are saved in the panel
 RAZORPAY_KEY_SECRET=…
 RAZORPAY_WEBHOOK_SECRET=…
 ```

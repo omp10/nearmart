@@ -11,6 +11,7 @@ import { Coupon } from '../coupons/coupon.model.js';
 import { discountFor, evaluateCoupon, redeemCoupon, releaseCoupon } from '../coupons/coupon.service.js';
 import { getAddress } from '../customers/customer.service.js';
 import { notify, notifyStaff } from '../notifications/notification.service.js';
+import { gatewayConfig } from '../payments/gateway.config.js';
 import { Payment } from '../payments/payment.model.js';
 import { createGatewayPayment, initiateRefund, paymentEvents } from '../payments/payment.service.js';
 import { assertCheckoutAllowed } from '../settings/settings.service.js';
@@ -125,7 +126,7 @@ const assertWithinOpenLimits = async (userId) => {
  * the ones already done: slot, stock per line, coupon, order.
  */
 export const placeOrder = async (userId, { module, addressId, slotId, couponCode, paymentMethod, notes = '' }) => {
-    if (paymentMethod === 'online' && !env.razorpayEnabled) throw new ValidationError('Online payment is not available right now');
+    if (paymentMethod === 'online' && !(await gatewayConfig()).enabled) throw new ValidationError('Online payment is not available right now');
 
     const { address, zone, lines, coupon, slotRequired, pricing } = await quote(userId, { module, addressId, couponCode });
     await assertCheckoutAllowed({ paymentMethod, totalPaise: pricing.totalPaise });
@@ -395,7 +396,7 @@ export const paymentDetails = async (userId, orderId) => {
     if (order.status !== 'pending_payment') throw new ConflictError('This order is not awaiting payment');
     const payment = await Payment.findById(order.payment.paymentId).lean();
     if (!payment) throw new NotFoundError('Payment not found');
-    return { paymentId: String(payment._id), keyId: env.RAZORPAY_KEY_ID, gatewayOrderId: payment.gatewayOrderId, amountPaise: payment.amountPaise, currency: 'INR', payBy: order.paymentDueBy };
+    return { paymentId: String(payment._id), keyId: (await gatewayConfig()).keyId, gatewayOrderId: payment.gatewayOrderId, amountPaise: payment.amountPaise, currency: 'INR', payBy: order.paymentDueBy };
 };
 
 /** Puts what is still available from a past order back in the cart. */

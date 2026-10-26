@@ -131,11 +131,10 @@ export default function Banners() {
     const { can } = useAuth();
     const queryClient = useQueryClient();
     const [editing, setEditing] = useState(null);
-    const { module, modules } = useCurrentModule();
+    const { module, modules, isGlobal } = useCurrentModule();
     const name = modules.find((m) => m.key === module)?.name ?? module;
-    // Each module's page has its own banners; the app's home screen is shared by all modules.
-    const [view, setView] = useState('module');
-    const placement = view === 'home' ? 'home' : module;
+    // Each module's page has its own banners; the app's home screen, shared by all modules, lives under Global.
+    const placement = isGlobal ? 'home' : module;
     const { data: all = [], isLoading, error } = useQuery({ queryKey: ['banners'], queryFn: () => api.get('/admin/banners').then((r) => r.data.data) });
     const banners = all.filter((b) => b.placement === placement);
     const remove = useMutation({ mutationFn: (id) => api.delete(`/admin/banners/${id}`), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['banners'] }) });
@@ -145,23 +144,9 @@ export default function Banners() {
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-semibold">Banners</h1>
-                    <p className="text-sm text-slate-500">Promotions on the app's {name} page, or on the home screen every module shares.</p>
+                    <p className="text-sm text-slate-500">{isGlobal ? "Promotions on the app's home screen, which every module shares. Each module's own page banners are under its tab." : `Promotions on the app's ${name} page. Home screen banners are under Global.`}</p>
                 </div>
                 {can('banners', 'create') && <button type="button" className="btn-primary" onClick={() => setEditing({})}>Add banner</button>}
-            </div>
-            <div className="flex flex-wrap gap-1" role="tablist" aria-label="Banner placement">
-                {[['module', `${name} page`], ['home', 'App home screen']].map(([value, label]) => (
-                    <button
-                        key={value}
-                        type="button"
-                        role="tab"
-                        aria-selected={view === value}
-                        onClick={() => setView(value)}
-                        className={`rounded-full border px-3 py-1 text-sm ${view === value ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                    >
-                        {label}
-                    </button>
-                ))}
             </div>
             <ErrorNote error={error || remove.error} />
             {isLoading && <p className="text-sm text-slate-500">Loading…</p>}

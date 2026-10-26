@@ -4,10 +4,11 @@ import { NavLink, Outlet, useNavigate } from 'react-router';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
 import { ModuleProvider, useCurrentModule } from '../lib/moduleContext.jsx';
-import { NAV_GROUPS } from '../nav.js';
-import { Carrot, ChevronDown, LogOut, Menu, Plug, Search, ShoppingBasket, Store, WashingMachine } from 'lucide-react';
+import { GLOBAL, NAV_GROUPS } from '../nav.js';
+import { Carrot, ChevronDown, Globe, LogOut, Menu, Plug, Search, ShoppingBasket, Store, WashingMachine } from 'lucide-react';
 
 const MODULE_TABS = {
+    [GLOBAL]: { label: 'Global', icon: Globe },
     grocery: { label: 'Grocery', icon: ShoppingBasket },
     produce: { label: 'Produce', icon: Carrot },
     laundry: { label: 'Laundry', icon: WashingMachine },
@@ -16,44 +17,63 @@ const MODULE_TABS = {
 
 const roleLabel = (user) => (user.isSuperAdmin ? 'Super admin' : user.role === 'ops' ? 'Operations' : 'Admin');
 
-/** Nav groups the signed-in user may open in the selected module, narrowed by a search query. */
+/** Nav groups the signed-in user may open in the selected view, narrowed by a search query. */
 function useNavGroups(query = '') {
     const { can } = useAuth();
-    const { module } = useCurrentModule();
+    const { view } = useCurrentModule();
     const q = query.trim().toLowerCase();
     // Everyone gets the dashboard as a landing page; its widgets check their own permissions.
     const shows = (item) =>
-        (item.to === '/' || can(item.section)) && (!item.modules || item.modules.includes(module)) && (!q || item.label.toLowerCase().includes(q));
+        (item.to === '/' || can(item.section)) && item.views.includes(view) && (!q || item.label.toLowerCase().includes(q));
     return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter(shows) })).filter((g) => g.items.length);
 }
 
-/** Pill tabs choosing the module every module-aware page shows. */
+/** Pill tabs: Global (shared things) on its own row, then one per module. */
 function ModuleSwitcher() {
-    const { module, chooseModule, modules } = useCurrentModule();
-    if (modules.length < 2) return null;
+    const { view, chooseModule, modules, canGlobal } = useCurrentModule();
+    if (modules.length + (canGlobal ? 1 : 0) < 2) return null;
+
+    const tabClass = (active, extra = '') =>
+        `flex min-w-0 items-center rounded-lg text-[11px] font-semibold transition ${
+            active ? 'bg-neutral-900 text-white shadow' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
+        } ${extra}`;
+    const GlobalIcon = MODULE_TABS[GLOBAL].icon;
+
     return (
-        <div role="radiogroup" aria-label="Module" className="grid auto-cols-fr grid-flow-col gap-1 rounded-xl border border-neutral-200 bg-white p-1 shadow-sm">
-            {modules.map((m) => {
-                const tab = MODULE_TABS[m.key] ?? { label: m.name, icon: Store };
-                const Icon = tab.icon;
-                const active = m.key === module;
-                return (
-                    <button
-                        key={m.key}
-                        type="button"
-                        role="radio"
-                        aria-checked={active}
-                        title={`${m.name}${m.isActive ? '' : ' (off)'}`}
-                        onClick={() => chooseModule(m.key)}
-                        className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] font-semibold transition ${
-                            active ? 'bg-neutral-900 text-white shadow' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
-                        } ${m.isActive ? '' : 'opacity-60'}`}
-                    >
-                        <Icon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-                        <span className="w-full truncate">{tab.label}</span>
-                    </button>
-                );
-            })}
+        <div role="radiogroup" aria-label="Module" className="space-y-1 rounded-xl border border-neutral-200 bg-white p-1 shadow-sm">
+            {canGlobal && (
+                <button
+                    type="button"
+                    role="radio"
+                    aria-checked={view === GLOBAL}
+                    title="Customers, settings, staff and every module together"
+                    onClick={() => chooseModule(GLOBAL)}
+                    className={tabClass(view === GLOBAL, 'w-full justify-center gap-1.5 px-2 py-1.5')}
+                >
+                    <GlobalIcon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                    {MODULE_TABS[GLOBAL].label}
+                </button>
+            )}
+            <div className="grid auto-cols-fr grid-flow-col gap-1">
+                {modules.map((m) => {
+                    const tab = MODULE_TABS[m.key] ?? { label: m.name, icon: Store };
+                    const Icon = tab.icon;
+                    return (
+                        <button
+                            key={m.key}
+                            type="button"
+                            role="radio"
+                            aria-checked={m.key === view}
+                            title={`${m.name}${m.isActive ? '' : ' (off)'}`}
+                            onClick={() => chooseModule(m.key)}
+                            className={tabClass(m.key === view, `flex-col gap-0.5 px-1 py-1.5 ${m.isActive ? '' : 'opacity-60'}`)}
+                        >
+                            <Icon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                            <span className="w-full truncate">{tab.label}</span>
+                        </button>
+                    );
+                })}
+            </div>
         </div>
     );
 }

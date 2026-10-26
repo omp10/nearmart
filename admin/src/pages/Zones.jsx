@@ -11,7 +11,7 @@ const parsePincodes = (text) => [...new Set(text.split(/[\s,;]+/).map((s) => s.t
 const toForm = (z, module) => ({
     name: z?.name ?? '',
     isActive: z?.isActive ?? true,
-    modules: z?.modules ?? [module],
+    modules: z?.modules ?? (module ? [module] : []),
     pincodes: (z?.pincodes ?? []).join(', '),
     polygon: z?.polygon?.type ? JSON.stringify(z.polygon) : '',
     priority: String(z?.priority ?? 0),
@@ -37,8 +37,8 @@ const parsePolygon = (text) => {
 function ZoneForm({ zone, onDone }) {
     const queryClient = useQueryClient();
     const { data: modules = [] } = useModules();
-    const { module } = useCurrentModule();
-    const [form, setForm] = useState(() => toForm(zone, module));
+    const { module, isGlobal } = useCurrentModule();
+    const [form, setForm] = useState(() => toForm(zone, isGlobal ? null : module));
     const [formError, setFormError] = useState('');
     const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
@@ -189,14 +189,14 @@ export default function Zones() {
     const queryClient = useQueryClient();
     const [editing, setEditing] = useState(null);
     const isAdmin = user.role === 'admin';
-    const { module, modules } = useCurrentModule();
+    const { module, modules, isGlobal } = useCurrentModule();
     const name = modules.find((m) => m.key === module)?.name ?? module;
     const { data: all = [], isLoading, error } = useQuery({
         queryKey: ['zones'],
         queryFn: () => api.get('/admin/zones').then((r) => r.data.data)
     });
     // An area can serve several modules; it shows under each of them.
-    const zones = all.filter((zn) => zn.modules.includes(module));
+    const zones = isGlobal ? all : all.filter((zn) => zn.modules.includes(module));
     const remove = useMutation({
         mutationFn: (id) => api.delete(`/admin/zones/${id}`),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['zones'] })
@@ -231,7 +231,7 @@ export default function Zones() {
                     <tbody>
                         {isLoading && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">Loading…</td></tr>}
                         {!isLoading && zones.length === 0 && (
-                            <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No service areas deliver {name} yet. Customers can't order {name} until one does.</td></tr>
+                            <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">{isGlobal ? "No service areas yet. Customers can't order until one exists." : `No service areas deliver ${name} yet. Customers can't order ${name} until one does.`}</td></tr>
                         )}
                         {zones.map((zn) => (
                             <tr key={zn._id} className="border-t border-slate-100">

@@ -1,5 +1,6 @@
 import { ValidationError } from '../../lib/errors.js';
 import { formatRupees } from '../../lib/money.js';
+import { gatewayConfig } from '../payments/gateway.config.js';
 import { Settings } from './settings.model.js';
 
 /** The settings document, created with defaults on first read. */
@@ -27,10 +28,12 @@ export const updateSettings = async (patch) => {
 /** What the app needs: contact, policies and which payment options to show. */
 export const publicSettings = async () => {
     const s = await getSettings();
+    // Online payment shows only when it's switched on and a gateway is configured.
+    const online = s.orders.onlinePaymentEnabled && (await gatewayConfig()).enabled;
     return {
         contact: s.contact,
         policies: s.policies,
-        payments: { cod: s.orders.codEnabled, online: s.orders.onlinePaymentEnabled, codMaxOrderPaise: s.orders.codMaxOrderPaise },
+        payments: { cod: s.orders.codEnabled, online, codMaxOrderPaise: s.orders.codMaxOrderPaise },
         acceptingOrders: s.operations.acceptingOrders,
         pausedMessage: s.operations.acceptingOrders ? '' : s.operations.pausedMessage || 'We are not taking orders right now.'
     };

@@ -60,7 +60,8 @@ test('an admin sets up a service area, slots, a coupon and contact details', asy
     await expect(couponRow).toContainText('10% off up to ₹50.00 on ₹200.00+');
     await expect(couponRow).toContainText('Live');
 
-    // Contact details appear in the app's settings.
+    // Contact details appear in the app's settings, which are global.
+    await pickModule(page, 'global');
     await page.getByRole('link', { name: 'Settings' }).click();
     const contact = main.locator('form', { hasText: 'Contact details' });
     await contact.getByLabel('Phone').fill('020-24567890');

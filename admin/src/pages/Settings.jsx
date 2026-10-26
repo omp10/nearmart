@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
 import { paiseToRupees, rupeesToPaise } from '../lib/money.js';
-import { ErrorNote } from '../components/ui.jsx';
+import { Badge, ErrorNote } from '../components/ui.jsx';
 
 const POLICIES = [
     ['terms', 'Terms of service'],
@@ -48,7 +48,93 @@ function useSection(section) {
     });
 }
 
+const SOURCE_LABELS = {
+    panel: 'Using the keys saved here',
+    environment: "Using the server's environment keys",
+    none: 'Not configured: online payment is off'
+};
+
+/** Shows a saved secret only as "set · ends in 1234"; the API never returns secrets. */
+const secretHint = (s) => (s?.set ? `Saved · ends in ${s.last4}. Leave blank to keep it.` : 'Not set');
+
+/** Razorpay credentials (super admin). Secrets are write-only from here. */
+function PaymentGateway() {
+    const queryClient = useQueryClient();
+    const { data: g, isLoading, error } = useQuery({
+        queryKey: ['payment-gateway'],
+        queryFn: () => api.get('/admin/settings/payment-gateway').then((r) => r.data.data)
+    });
+    const [form, setForm] = useState({ keyId: '', keySecret: '', webhookSecret: '' });
+    useEffect(() => {
+        if (g) setForm({ keyId: g.keyId, keySecret: '', webhookSecret: '' });
+    }, [g]);
+    const onSaved = (res) => queryClient.setQueryData(['payment-gateway'], res.data.data);
+    const save = useMutation({ mutationFn: (body) => api.put('/admin/settings/payment-gateway', body), onSuccess: onSaved });
+    const reset = useMutation({ mutationFn: () => api.delete('/admin/settings/payment-gateway'), onSuccess: onSaved });
+
+    if (isLoading) return <p className="text-sm text-slate-500">Loading payment gateway…</p>;
+    if (!g) return <ErrorNote error={error} />;
+    const webhookUrl = `${window.location.origin}/api/v1/payments/webhook/razorpay`;
+
+    return (
+        <form
+            className="card space-y-4"
+            onSubmit={(e) => {
+                e.preventDefault();
+                save.mutate(form);
+            }}
+        >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 className="font-semibold">Payment gateway</h2>
+                    <p className="text-sm text-slate-500">Razorpay keys for online payment in every module. Only the super admin sees this.</p>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                    <Badge tone={g.enabled ? 'green' : 'red'}>{SOURCE_LABELS[g.source]}</Badge>
+                    {g.mode && <Badge tone={g.mode === 'live' ? 'green' : 'amber'}>{g.mode === 'live' ? 'Live mode' : 'Test mode'}</Badge>}
+                </div>
+            </div>
+            <ErrorNote error={save.error || reset.error} />
+            {!g.canSave && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    The server needs a SECRETS_KEY before keys can be saved here; until then it uses its environment keys.
+                </p>
+            )}
+            <fieldset disabled={!g.canSave} className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                    <label className="label" htmlFor="pg-key">Key id</label>
+                    <input id="pg-key" className="input font-mono" placeholder="rzp_live_…" value={form.keyId} onChange={(e) => setForm({ ...form, keyId: e.target.value })} required />
+                </div>
+                <div>
+                    <label className="label" htmlFor="pg-secret">Key secret</label>
+                    <input id="pg-secret" type="password" autoComplete="new-password" className="input font-mono" value={form.keySecret} onChange={(e) => setForm({ ...form, keySecret: e.target.value })} />
+                    <p className="mt-1 text-xs text-slate-500">{secretHint(g.keySecret)}</p>
+                </div>
+                <div>
+                    <label className="label" htmlFor="pg-webhook">Webhook secret</label>
+                    <input id="pg-webhook" type="password" autoComplete="new-password" className="input font-mono" value={form.webhookSecret} onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })} />
+                    <p className="mt-1 text-xs text-slate-500">{secretHint(g.webhookSecret)}</p>
+                </div>
+            </fieldset>
+            <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                In Razorpay → Settings → Webhooks, point a webhook at <span className="font-mono">{webhookUrl}</span> with the same secret, for the events
+                payment.captured, payment.failed, order.paid and refund.processed.
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+                {save.isSuccess && <span className="text-sm text-brand-700" role="status">Saved</span>}
+                {g.source === 'panel' && (
+                    <button type="button" className="btn-ghost" disabled={reset.isPending} onClick={() => window.confirm('Forget these keys and use the server environment keys?') && reset.mutate()}>
+                        Use environment keys
+                    </button>
+                )}
+                <button type="submit" className="btn-primary" disabled={!g.canSave || save.isPending}>{save.isPending ? 'Saving…' : 'Save keys'}</button>
+            </div>
+        </form>
+    );
+}
+
 export default function Settings() {
+    const { user } = useAuth();
     const { data, isLoading, error } = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/admin/settings').then((r) => r.data.data) });
     const [contact, setContact] = useState(null);
     const [policies, setPolicies] = useState(null);
@@ -77,7 +163,7 @@ export default function Settings() {
         <div className="space-y-6">
             <div>
                 <h1 className="text-2xl font-semibold">Settings</h1>
-                <p className="text-sm text-slate-500">Shown in the customer app and applied at checkout.</p>
+                <p className="text-sm text-slate-500">Global: these apply to every module. Shown in the customer app and applied at checkout.</p>
             </div>
 
             <Section
@@ -125,6 +211,8 @@ export default function Settings() {
                     <input id="s-codmax" type="number" min="0" step="1" className="input" placeholder="No limit" value={orders.codMax} onChange={(e) => setOrders({ ...orders, codMax: e.target.value })} />
                 </div>
             </Section>
+
+            {user.isSuperAdmin && <PaymentGateway />}
 
             <Section title="Contact details" onSave={() => saveContact.mutate(contact)} saving={saveContact.isPending} error={saveContact.error} saved={saveContact.isSuccess}>
                 <div className="grid gap-4 sm:grid-cols-2">
