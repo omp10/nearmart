@@ -53,7 +53,16 @@ export const createApp = () => {
 
     // Local uploads in development; nginx serves this path in production.
     if (!env.isProduction) {
-        app.use(uploadMountPath(env.UPLOAD_BASE_URL), express.static(env.UPLOAD_STORAGE_ROOT, { fallthrough: false, index: false }));
+        app.use(
+            uploadMountPath(env.UPLOAD_BASE_URL),
+            express.static(env.UPLOAD_STORAGE_ROOT, {
+                fallthrough: false,
+                index: false,
+                // Images are there to be shown by the apps (the customer web build is another origin);
+                // helmet's same-origin default would block them.
+                setHeaders: (res) => res.set('Cross-Origin-Resource-Policy', 'cross-origin')
+            })
+        );
     }
 
     app.use(notFound);

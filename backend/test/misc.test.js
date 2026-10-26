@@ -54,6 +54,11 @@ describe('uploads', () => {
         expect(res.status).toBe(201);
         expect(res.body.data.url).toMatch(/^\/uploads\/catalog\/\d{4}-\d{2}\/.+\.webp$/);
         await fs.access(path.resolve(process.env.UPLOAD_STORAGE_ROOT, res.body.data.path));
+
+        // Served for other origins (the apps) to show.
+        const served = await api().get(res.body.data.url);
+        expect(served.status).toBe(200);
+        expect(served.headers['cross-origin-resource-policy']).toBe('cross-origin');
     });
 
     it('rejects bytes that are not an image even with an image mimetype', async () => {
