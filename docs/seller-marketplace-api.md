@@ -16,7 +16,7 @@ Base URL `https://nearmart.buytogetherindia.com/api/v1`. The envelope, errors, p
 ## 1. Lifecycle
 
 ```
-sign up (phone OTP) → draft ──submit──→ submitted ──approve──→ approved ⇄ suspended
+sign up (phone → OTP verified → details) → draft ──submit──→ submitted ──approve──→ approved ⇄ suspended
                          ↑                  └──reject (reason)──→ rejected ──edit + submit──┘
 ```
 
@@ -35,7 +35,8 @@ open** (`isOpen`), and only in shops approved for them.
 | Call | Body | Notes |
 |---|---|---|
 | `POST /signup/request-otp` | `{ phone }` | `409` if the number already has an account. Test server returns `devOtp` |
-| `POST /signup` | `{ phone, otp, businessName, ownerName, email, password }` | Password ≥ 10 chars. Returns a session (below) |
+| `POST /signup/verify-otp` | `{ phone, otp }` | Checks the OTP on its own → `{ signupToken, phone, expiresIn: 1800 }`. Wrong code: `401` |
+| `POST /signup` | `{ signupToken, businessName, ownerName, email, password }` | Onboarding, within 30 min of verifying. Password ≥ 10 chars. Expired/invalid token: `401` (verify again). Returns a session (below) |
 | `POST /login` | `{ login, password }` | `login` = email or 10-digit phone. Locks for 15 min after 8 wrong passwords |
 | `POST /refresh` | `{ refreshToken? }` | Web: from the `nm_srt` cookie. Mobile: in the body |
 | `POST /logout` | `{ refreshToken? }` | |

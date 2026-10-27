@@ -159,32 +159,32 @@ export function Login() {
     );
 }
 
+/**
+ * Three steps: the mobile number alone, then the OTP (checked by the server
+ * before going on), then the onboarding details. The server's signup token
+ * from step 2 is what lets step 3 create the account.
+ */
 export function Signup() {
     const { signup } = useAuth();
     const [step, setStep] = useState(1);
     const [phone, setPhone] = useState('');
     const [devOtp, setDevOtp] = useState('');
-    const [form, setForm] = useState({ otp: '', businessName: '', ownerName: '', email: '', password: '' });
+    const [otp, setOtp] = useState('');
+    const [signupToken, setSignupToken] = useState('');
+    const [form, setForm] = useState({ businessName: '', ownerName: '', email: '', password: '' });
     const [error, setError] = useState(null);
     const [busy, setBusy] = useState(false);
     const errors = fieldErrors(error);
     const set = (patch) => setForm((f) => ({ ...f, ...patch }));
     const phoneCheck = useValidation({ phone }, { phone: check.phone }, errors);
-    const v = useValidation(
-        form,
-        { otp: check.otp, businessName: check.businessName, ownerName: check.ownerName, email: check.email, password: check.newPassword },
-        errors
-    );
+    const otpCheck = useValidation({ otp }, { otp: check.otp }, errors);
+    const v = useValidation(form, { businessName: check.businessName, ownerName: check.ownerName, email: check.email, password: check.newPassword }, errors);
 
-    const requestOtp = async (e) => {
-        e?.preventDefault();
-        if (!phoneCheck.submit()) return;
+    const run = async (fn) => {
         setError(null);
         setBusy(true);
         try {
-            const res = await api.post('/auth/seller/signup/request-otp', { phone: normalizePhone(phone) }, { skipAuthRefresh: true });
-            setDevOtp(res.data.data?.devOtp ?? '');
-            setStep(2);
+            await fn();
         } catch (err) {
             setError(err);
         } finally {
@@ -192,26 +192,56 @@ export function Signup() {
         }
     };
 
-    const onSubmit = async (e) => {
+    const requestOtp = (e) => {
+        e?.preventDefault();
+        if (!phoneCheck.submit()) return;
+        run(async () => {
+            const res = await api.post('/auth/seller/signup/request-otp', { phone: normalizePhone(phone) }, { skipAuthRefresh: true });
+            setDevOtp(res.data.data?.devOtp ?? '');
+            setOtp('');
+            otpCheck.reset();
+            setStep(2);
+        });
+    };
+
+    const verifyOtp = (e) => {
+        e.preventDefault();
+        if (!otpCheck.submit()) return;
+        run(async () => {
+            const res = await api.post('/auth/seller/signup/verify-otp', { phone: normalizePhone(phone), otp }, { skipAuthRefresh: true });
+            setSignupToken(res.data.data.signupToken);
+            setStep(3);
+        });
+    };
+
+    const onSubmit = (e) => {
         e.preventDefault();
         if (!v.submit()) return;
-        setError(null);
-        setBusy(true);
-        try {
-            await signup({ phone: normalizePhone(phone), ...form, email: form.email.trim() });
-        } catch (err) {
-            setError(err);
-            setBusy(false);
-        }
+        run(async () => {
+            try {
+                await signup({ signupToken, ...form, email: form.email.trim() });
+            } catch (err) {
+                // The verification lapsed (30 minutes): start again from the number.
+                if (err?.response?.status === 401) {
+                    setSignupToken('');
+                    setStep(1);
+                }
+                throw err;
+            }
+        });
     };
+
+    const changeNumber = () => {
+        setStep(1);
+        setError(null);
+        setSignupToken('');
+    };
+
+    const footer = <>Already selling? <Link to="/login" className="font-medium text-brand-700 hover:underline">Sign in</Link></>;
 
     if (step === 1) {
         return (
-            <AuthCard
-                title="Sell on Nearmart"
-                subtitle="Reach customers near your shop. Let's start with your mobile number."
-                footer={<>Already selling? <Link to="/login" className="font-medium text-brand-700 hover:underline">Sign in</Link></>}
-            >
+            <AuthCard title="Sell on Nearmart" subtitle="Reach customers near your shop. Let's start with your mobile number." footer={footer}>
                 <form onSubmit={requestOtp} className="space-y-4" noValidate>
                     <ErrorNote error={error} />
                     <Field label="Mobile number" htmlFor="phone" errors={phoneCheck.errors} path="phone" hint="We'll send a one-time code (OTP) to this number.">
@@ -223,24 +253,31 @@ export function Signup() {
         );
     }
 
+    if (step === 2) {
+        return (
+            <AuthCard title="Verify your number" subtitle={`Enter the OTP sent to ${normalizePhone(phone)}`} footer={footer}>
+                <form onSubmit={verifyOtp} className="space-y-4" noValidate>
+                    <DevOtp code={devOtp} />
+                    <ErrorNote error={error} />
+                    <Field label="OTP" htmlFor="otp" errors={otpCheck.errors} path="otp">
+                        <input id="otp" className="input text-center text-lg tracking-[0.5em]" inputMode="numeric" autoComplete="one-time-code" maxLength={8} autoFocus value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} {...otpCheck.bind('otp')} />
+                    </Field>
+                    <button type="submit" className="btn-primary w-full py-2.5" disabled={busy || !otpCheck.valid}>{busy ? 'Checking…' : 'Verify and continue'}</button>
+                    <div className="flex justify-between text-sm">
+                        <button type="button" className="text-brand-700 hover:underline" onClick={changeNumber}>Change number</button>
+                        <button type="button" className="text-brand-700 hover:underline disabled:opacity-60" disabled={busy} onClick={() => requestOtp()}>Resend OTP</button>
+                    </div>
+                </form>
+            </AuthCard>
+        );
+    }
+
     return (
-        <AuthCard
-            title="Create your seller account"
-            subtitle={`OTP sent to ${normalizePhone(phone)}`}
-            footer={<>Already selling? <Link to="/login" className="font-medium text-brand-700 hover:underline">Sign in</Link></>}
-        >
+        <AuthCard title="Set up your seller account" subtitle={`${normalizePhone(phone)} verified ✓`} footer={footer}>
             <form onSubmit={onSubmit} className="space-y-4" noValidate>
-                <DevOtp code={devOtp} />
                 <ErrorNote error={error} />
-                <Field label="OTP" htmlFor="otp" errors={v.errors} path="otp">
-                    <input id="otp" className="input tracking-widest" inputMode="numeric" autoComplete="one-time-code" maxLength={8} value={form.otp} onChange={(e) => set({ otp: e.target.value.replace(/\D/g, '') })} {...v.bind('otp')} />
-                </Field>
-                <div className="flex justify-between text-sm">
-                    <button type="button" className="text-brand-700 hover:underline" onClick={() => { setStep(1); setError(null); v.reset(); }}>Change number</button>
-                    <button type="button" className="text-brand-700 hover:underline disabled:opacity-60" disabled={busy} onClick={() => requestOtp()}>Resend OTP</button>
-                </div>
                 <Field label="Business name" htmlFor="businessName" errors={v.errors} path="businessName" hint="The name customers will see">
-                    <input id="businessName" className="input" value={form.businessName} onChange={(e) => set({ businessName: e.target.value })} maxLength={120} autoComplete="organization" {...v.bind('businessName')} />
+                    <input id="businessName" className="input" value={form.businessName} onChange={(e) => set({ businessName: e.target.value })} maxLength={120} autoComplete="organization" autoFocus {...v.bind('businessName')} />
                 </Field>
                 <Field label="Your name" htmlFor="ownerName" errors={v.errors} path="ownerName">
                     <input id="ownerName" className="input" value={form.ownerName} onChange={(e) => set({ ownerName: e.target.value })} maxLength={80} autoComplete="name" {...v.bind('ownerName')} />

@@ -75,14 +75,19 @@ sellerAuthRoutes.post('/signup/request-otp', authLimiter, validate(z.object({ ph
     ok(res, await auth.requestSellerSignupOtp(req.body.phone), 'OTP sent');
 });
 
+/** Step 2: checks the OTP on its own and returns a 30-minute token for the onboarding form. */
+sellerAuthRoutes.post('/signup/verify-otp', authLimiter, validate(z.object({ phone, otp })), async (req, res) => {
+    ok(res, await auth.verifySellerSignupOtp(req.body), 'Mobile number verified');
+});
+
+/** Step 3: the onboarding form, allowed only with the token from verify-otp. */
 sellerAuthRoutes.post(
     '/signup',
     trustedOrigin,
     authLimiter,
     validate(
         z.object({
-            phone,
-            otp,
+            signupToken: z.string().min(20, 'Verify your mobile number first').max(2000),
             businessName: z.string().trim().min(2).max(120),
             ownerName: z.string().trim().min(2).max(80),
             email: z.string().trim().email(),

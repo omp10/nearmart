@@ -1,5 +1,7 @@
+import crypto from 'node:crypto';
+import jwt from 'jsonwebtoken';
 import { env } from '../../config/env.js';
-import { AuthError, ConflictError, ForbiddenError, TooManyRequestsError, ValidationError } from '../../lib/errors.js';
+import { AppError, AuthError, ConflictError, ForbiddenError, TooManyRequestsError, ValidationError } from '../../lib/errors.js';
 import { User } from '../users/user.model.js';
 import { Staff } from '../staff/staff.model.js';
 import { Rider } from '../riders/rider.model.js';
@@ -135,17 +137,44 @@ export const requestSellerSignupOtp = async (phone) => {
     return requestCustomerOtp(phone);
 };
 
+/**
+ * Proof that a phone passed its OTP, for the onboarding form that follows.
+ * Signed with its own key so it can never pass as an access token.
+ */
+const SIGNUP_TOKEN_MINUTES = 30;
+const signupKey = () => crypto.createHmac('sha256', env.JWT_REFRESH_SECRET).update('seller-signup').digest();
+
+export const verifySellerSignupOtp = async ({ phone, otp }) => {
+    if (await Seller.exists({ phone })) throw new ConflictError('This number already has a seller account. Sign in instead.');
+    const result = await verifyOtp(phone, otp);
+    if (!result.valid) throw new AuthError(result.reason);
+    const signupToken = jwt.sign({ phone, purpose: 'seller_signup' }, signupKey(), { algorithm: 'HS256', issuer: 'nearmart', expiresIn: SIGNUP_TOKEN_MINUTES * 60 });
+    return { signupToken, phone, expiresIn: SIGNUP_TOKEN_MINUTES * 60 };
+};
+
+const phoneFromSignupToken = (token) => {
+    try {
+        const claims = jwt.verify(String(token ?? ''), signupKey(), { issuer: 'nearmart', algorithms: ['HS256'] });
+        if (claims.purpose !== 'seller_signup' || !claims.phone) throw new Error('wrong token');
+        return claims.phone;
+    } catch {
+        throw new AuthError('Your verification expired. Please verify your mobile number again.');
+    }
+};
+
 const sellerSession = async (seller, meta) => {
     const session = await issueSession({ id: seller._id, kind: 'seller', role: 'seller', tokenVersion: seller.tokenVersion }, meta);
     return { ...session, seller: sellerProfile(seller) };
 };
 
-export const registerSeller = async ({ phone, otp, businessName, ownerName, email, password }, meta = {}) => {
+/** Creates the account from the onboarding form, for a phone already verified by OTP. */
+export const registerSeller = async ({ signupToken, businessName, ownerName, email, password }, meta = {}) => {
+    const phone = phoneFromSignupToken(signupToken);
     const normalizedEmail = String(email).toLowerCase().trim();
     if (await Seller.exists({ phone })) throw new ConflictError('This number already has a seller account. Sign in instead.');
-    if (await Seller.exists({ email: normalizedEmail })) throw new ConflictError('This email already has a seller account');
-    const result = await verifyOtp(phone, otp);
-    if (!result.valid) throw new AuthError(result.reason);
+    if (await Seller.exists({ email: normalizedEmail })) {
+        throw new AppError('This email already has a seller account', 409, [{ path: 'email', message: 'This email already has a seller account' }]);
+    }
     const seller = await Seller.create({
         phone,
         email: normalizedEmail,

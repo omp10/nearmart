@@ -20,9 +20,10 @@ let tvs;
 
 const signUp = async (phone = '9811122233', extra = {}) => {
     const otpRes = await api().post('/api/v1/auth/seller/signup/request-otp').send({ phone }).expect(200);
+    const verified = await api().post('/api/v1/auth/seller/signup/verify-otp').send({ phone, otp: otpRes.body.data.devOtp }).expect(200);
     const res = await api()
         .post('/api/v1/auth/seller/signup')
-        .send({ phone, otp: otpRes.body.data.devOtp, businessName: 'Sharma Kirana', ownerName: 'Ravi Sharma', email: `${phone}@shop.test`, password: 'kirana-pass-123', ...extra });
+        .send({ signupToken: verified.body.data.signupToken, businessName: 'Sharma Kirana', ownerName: 'Ravi Sharma', email: `${phone}@shop.test`, password: 'kirana-pass-123', ...extra });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     return res.body.data;
 };
@@ -110,6 +111,19 @@ describe('seller onboarding', () => {
         // A seller token can't reach the admin API, and a phone can't sign up twice.
         expect((await api().get(`${A}/sellers`).set(as(refreshed.body.data.accessToken))).status).toBe(403);
         expect((await api().post('/api/v1/auth/seller/signup/request-otp').send({ phone: '9822233344' })).status).toBe(409);
+    });
+
+    it('checks the OTP before onboarding and only accepts a real signup token', async () => {
+        const phone = '9877788899';
+        await api().post('/api/v1/auth/seller/signup/request-otp').send({ phone }).expect(200);
+        expect((await api().post('/api/v1/auth/seller/signup/verify-otp').send({ phone, otp: '000000' })).status).toBe(401);
+        const details = { businessName: 'Patel Stores', ownerName: 'Mina Patel', email: 'mina@shop.test', password: 'patel-pass-123' };
+        // No token, a forged one, or a customer's access token are all refused.
+        expect((await api().post('/api/v1/auth/seller/signup').send(details)).status).toBe(400);
+        expect((await api().post('/api/v1/auth/seller/signup').send({ ...details, signupToken: 'x'.repeat(40) })).status).toBe(401);
+        const customer = await loginCustomer('9877788800');
+        expect((await api().post('/api/v1/auth/seller/signup').send({ ...details, signupToken: customer.accessToken })).status).toBe(401);
+        expect(await Seller.countDocuments({ phone })).toBe(0);
     });
 });
 
