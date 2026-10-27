@@ -99,6 +99,10 @@ adminZoneRoutes.delete('/:id', requireAdmin, requirePermission('zones', 'delete'
 export const serviceabilityRoutes = Router();
 
 serviceabilityRoutes.get('/', validate(locationQuery, 'query'), async (req, res) => {
-    const { serviceable, modules } = await zones.checkServiceability(req.validatedQuery);
-    ok(res, { serviceable, modules });
+    const { serviceable, modules, zoneByModule } = await zones.checkServiceability(req.validatedQuery);
+    // Each shop's delivery terms at this address, for the app's delivery strip and free-delivery nudge.
+    const terms = Object.fromEntries(
+        Object.entries(zoneByModule).map(([m, z]) => [m, { minOrderPaise: z.minOrderPaise ?? null, deliveryFeePaise: z.deliveryFeePaise ?? null, freeDeliveryAbovePaise: z.freeDeliveryAbovePaise ?? null }])
+    );
+    ok(res, { serviceable, modules, terms });
 });

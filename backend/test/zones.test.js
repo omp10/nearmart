@@ -20,11 +20,12 @@ const createZone = async (body) => {
 
 describe('service areas', () => {
     it('matches by pincode or by polygon, per module', async () => {
-        await createZone({ name: 'Kothrud', modules: ['grocery', 'produce'], pincodes: ['411038', '411029'] });
+        await createZone({ name: 'Kothrud', modules: ['grocery', 'produce'], pincodes: ['411038', '411029'], minOrderPaise: 9900, deliveryFeePaise: 2500, freeDeliveryAbovePaise: 49900 });
         await createZone({ name: 'Pune laundry', modules: ['laundry'], polygon: PUNE });
 
         const byPin = await api().get('/api/v1/serviceability?pincode=411038');
-        expect(byPin.body.data).toEqual({ serviceable: true, modules: ['grocery', 'produce'] });
+        const terms = { minOrderPaise: 9900, deliveryFeePaise: 2500, freeDeliveryAbovePaise: 49900 };
+        expect(byPin.body.data).toEqual({ serviceable: true, modules: ['grocery', 'produce'], terms: { grocery: terms, produce: terms } });
 
         const byPoint = await api().get(`/api/v1/serviceability?lat=${INSIDE.lat}&lng=${INSIDE.lng}`);
         expect(byPoint.body.data.modules).toEqual(['laundry']);
@@ -33,7 +34,7 @@ describe('service areas', () => {
         expect(both.body.data.modules).toEqual(['grocery', 'laundry', 'produce']);
 
         const nowhere = await api().get(`/api/v1/serviceability?pincode=400001&lat=${OUTSIDE.lat}&lng=${OUTSIDE.lng}`);
-        expect(nowhere.body.data).toEqual({ serviceable: false, modules: [] });
+        expect(nowhere.body.data).toEqual({ serviceable: false, modules: [], terms: {} });
     });
 
     it('ignores inactive zones and modules switched off in the catalogue', async () => {
