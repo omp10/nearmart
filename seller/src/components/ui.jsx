@@ -16,7 +16,7 @@ export function ErrorNote({ error }) {
 export function FieldError({ errors, path }) {
     const message = errors?.[path];
     if (!message) return null;
-    return <p className="mt-1 text-xs text-red-600">{message}</p>;
+    return <p id={`${path}-error`} className="mt-1 text-xs text-red-600" role="alert">{message}</p>;
 }
 
 /** Label + control + hint + field error, the shape of every form row. */
