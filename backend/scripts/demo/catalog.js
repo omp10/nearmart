@@ -306,6 +306,69 @@ export const BANNERS = [
     { placement: 'electronics', title: 'Light up for less', subtitle: 'LED bulbs and battens from ₹99', cta: 'Shop lighting', colors: ['#f59e0b', '#78350f'], icon: 'bolt', link: { type: 'category', value: 'Lighting' } }
 ];
 
+export const OFFER_CARDS = [
+    {
+        module: 'grocery',
+        title: 'Beverages',
+        label: 'UP TO',
+        discountText: '12% OFF',
+        image: '/uploads/offers/beverages.webp',
+        backgroundColor: '#D1FAE5',
+        link: { type: 'category', value: 'Beverages' },
+        sortOrder: 1
+    },
+    {
+        module: 'grocery',
+        title: 'Oils & Ghee',
+        label: 'UP TO',
+        discountText: '10% OFF',
+        image: '/uploads/offers/oils-ghee.webp',
+        backgroundColor: '#FFEDD5',
+        link: { type: 'category', value: 'Oils & Ghee' },
+        sortOrder: 2
+    },
+    {
+        module: 'grocery',
+        title: 'Staples',
+        label: 'UP TO',
+        discountText: '10% OFF',
+        image: '/uploads/offers/staples.webp',
+        backgroundColor: '#FEF3C7',
+        link: { type: 'category', value: 'Staples' },
+        sortOrder: 3
+    },
+    {
+        module: 'grocery',
+        title: 'Dairy',
+        label: 'UP TO',
+        discountText: '15% OFF',
+        image: '/uploads/offers/dairy.webp',
+        backgroundColor: '#E0F2FE',
+        link: { type: 'category', value: 'Dairy & Breakfast' },
+        sortOrder: 4
+    },
+    {
+        module: 'grocery',
+        title: 'Snacks',
+        label: 'UP TO',
+        discountText: '20% OFF',
+        image: '/uploads/offers/snacks.webp',
+        backgroundColor: '#FEF9C3',
+        link: { type: 'category', value: 'Snacks & Biscuits' },
+        sortOrder: 5
+    },
+    {
+        module: 'produce',
+        title: 'Fresh fruits',
+        label: 'UP TO',
+        discountText: '15% OFF',
+        image: '/uploads/offers/fresh-fruits.webp',
+        backgroundColor: '#DCFCE7',
+        link: { type: 'category', value: 'Fresh Fruits' },
+        sortOrder: 1
+    }
+];
+
 export const COUPONS = [
     { code: 'WELCOME50', description: '₹50 off your first order above ₹299', type: 'flat', value: 50, minOrder: 299, firstOrderOnly: true, modules: [] },
     { code: 'FRESH10', description: '10% off fresh produce, up to ₹75', type: 'percent', value: 10, maxDiscount: 75, minOrder: 199, modules: ['produce'] },
