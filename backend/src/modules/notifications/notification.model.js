@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 const notificationSchema = new mongoose.Schema(
     {
         ownerId: { type: mongoose.Schema.Types.ObjectId, required: true },
-        ownerKind: { type: String, enum: ['user', 'staff'], required: true },
+        ownerKind: { type: String, enum: ['user', 'staff', 'rider'], required: true },
         title: { type: String, required: true, trim: true, maxlength: 120 },
         body: { type: String, trim: true, default: '', maxlength: 500 },
         /** Machine-readable event, e.g. `order.dispatched`, for the app to route on tap. */

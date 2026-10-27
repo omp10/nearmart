@@ -232,6 +232,8 @@ export const cancelBooking = async (id, { by, reason = '', userId, allowedModule
     if (booking.pickupSlot?.id) await releaseSlot(booking.pickupSlot.id).catch(() => {});
     if (booking.returnSlot?.id) await releaseSlot(booking.returnSlot.id).catch(() => {});
     if (paidOnline(booking)) await requestRefund(booking, booking.payment.paidPaise, `Booking ${booking.bookingNumber} cancelled`);
+    // Any delivery partner on this job is stood down (loaded lazily: the riders module depends on this one).
+    import('../riders/task.service.js').then((m) => m.cancelTasksForRef(booking._id, reason || 'Cancelled')).catch(() => {});
     tellStatus(booking, 'cancelled', paidOnline(booking) ? 'Your refund has been started.' : '');
     if (by?.kind === 'user') {
         notifyStaff(

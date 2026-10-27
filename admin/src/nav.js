@@ -1,5 +1,5 @@
 import {
-    BadgePercent, Boxes, CalendarClock, ChartColumn, FolderTree, LayoutDashboard, MapPinned, Megaphone,
+    BadgePercent, Bike, Boxes, CalendarClock, ChartColumn, FolderTree, LayoutDashboard, MapPinned, Megaphone,
     Package, Settings, ShieldCheck, Shirt, ShoppingBag, Users, WashingMachine
 } from 'lucide-react';
 
@@ -30,7 +30,8 @@ export const NAV_GROUPS = [
         title: 'Operations',
         items: [
             { to: '/orders', label: 'Orders', section: 'orders', icon: ShoppingBag, views: PRODUCT },
-            { to: '/bookings', label: 'Laundry bookings', section: 'bookings', icon: WashingMachine, views: LAUNDRY }
+            { to: '/bookings', label: 'Laundry bookings', section: 'bookings', icon: WashingMachine, views: LAUNDRY },
+            { to: '/riders', label: 'Delivery partners', section: 'riders', icon: Bike, views: EVERYWHERE }
         ]
     },
     {
@@ -79,6 +80,7 @@ export const PERMISSION_SECTIONS = [
     { section: 'inventory', label: 'Inventory' },
     { section: 'orders', label: 'Orders' },
     { section: 'bookings', label: 'Laundry bookings' },
+    { section: 'riders', label: 'Delivery partners' },
     { section: 'customers', label: 'Customers' },
     { section: 'zones', label: 'Service areas & slots' },
     { section: 'banners', label: 'Banners' },

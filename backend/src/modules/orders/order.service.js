@@ -283,6 +283,8 @@ export const cancelOrder = async (orderId, { by, reason = '', allowed = CANCELLA
     if (paidOnline(order)) {
         await requestRefund(order, order.pricing.totalPaise, `Order ${order.orderNumber} cancelled`);
     }
+    // Any delivery partner on this job is stood down (loaded lazily: the riders module depends on this one).
+    import('../riders/task.service.js').then((m) => m.cancelTasksForRef(order._id, reason || 'Cancelled')).catch(() => {});
     notifyCustomer(order, 'cancelled', paidOnline(order) ? 'Your refund has been started.' : '');
     if (by?.kind === 'user') {
         notifyStaff(

@@ -7,7 +7,9 @@ import { useCurrentModule } from '../lib/moduleContext.jsx';
 import { BOOKING_ACTIONS, BOOKING_CANCELLABLE, BOOKING_LABELS, BOOKING_TONES, RETURN_SLOT_EDITABLE, formatQty, nextBookingStatus } from '../lib/bookings.js';
 import { formatPaise } from '../lib/money.js';
 import { PAYMENT_LABELS } from '../lib/orders.js';
+import { bookingTaskKind } from '../lib/riders.js';
 import { Badge, ErrorNote, Modal } from '../components/ui.jsx';
+import { DeliveryCard } from '../components/riders.jsx';
 
 const when = (d) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
@@ -231,6 +233,17 @@ export default function BookingDetail() {
                         <p><span className="text-slate-500">Return: </span>{b.returnSlot?.id ? `${b.returnSlot.date}, ${b.returnSlot.label}` : 'Not scheduled'}</p>
                         <p><span className="text-slate-500">Area: </span>{b.zone?.name}</p>
                     </section>
+
+                    <DeliveryCard
+                        refId={b._id}
+                        module="laundry"
+                        kind={bookingTaskKind(b.status)}
+                        canAssign={canUpdate}
+                        onChanged={() => {
+                            queryClient.invalidateQueries({ queryKey: key });
+                            queryClient.invalidateQueries({ queryKey: ['bookings'] });
+                        }}
+                    />
 
                     <section className="card space-y-1 text-sm">
                         <h2 className="mb-2 font-semibold">Payment</h2>

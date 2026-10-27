@@ -11,7 +11,7 @@ import mongoose from 'mongoose';
 const refreshTokenSchema = new mongoose.Schema(
     {
         subjectId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
-        kind: { type: String, enum: ['user', 'staff'], required: true },
+        kind: { type: String, enum: ['user', 'staff', 'rider'], required: true },
         tokenHash: { type: String, required: true, unique: true },
         family: { type: String, required: true, index: true },
         tokenVersion: { type: Number, required: true },

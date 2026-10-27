@@ -95,7 +95,7 @@ const orderSchema = new mongoose.Schema(
                     _id: false,
                     status: String,
                     at: { type: Date, default: Date.now },
-                    by: { kind: { type: String, enum: ['user', 'staff', 'system'] }, id: ObjectId },
+                    by: { kind: { type: String, enum: ['user', 'staff', 'rider', 'system'] }, id: ObjectId },
                     note: { type: String, default: '' }
                 }
             ],

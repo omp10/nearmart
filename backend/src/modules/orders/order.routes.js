@@ -5,6 +5,7 @@ import { created, ok } from '../../lib/response.js';
 import { validate } from '../../lib/validate.js';
 import { allowedModules, authenticate, requireCustomer, requirePermission, requireStaff } from '../../middleware/auth.js';
 import { PRODUCT_MODULES } from '../catalog/module.model.js';
+import { deliveryInfoFor } from '../riders/task.service.js';
 import { CANCELLABLE_BY_CUSTOMER, ORDER_STATUSES } from './order.flow.js';
 import * as orders from './order.service.js';
 
@@ -61,7 +62,9 @@ customerOrderRoutes.get(
 );
 
 customerOrderRoutes.get('/:id', async (req, res) => {
-    ok(res, await orders.getCustomerOrder(req.auth.id, req.params.id));
+    const order = await orders.getCustomerOrder(req.auth.id, req.params.id);
+    // Who is bringing it and the code to share at the door, once a partner has accepted.
+    ok(res, { ...order, delivery: await deliveryInfoFor(order._id) });
 });
 
 customerOrderRoutes.get('/:id/payment', async (req, res) => {

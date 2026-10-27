@@ -9,7 +9,7 @@ const deviceTokenSchema = new mongoose.Schema(
     {
         token: { type: String, required: true, unique: true },
         ownerId: { type: mongoose.Schema.Types.ObjectId, required: true },
-        ownerKind: { type: String, enum: ['user', 'staff'], required: true },
+        ownerKind: { type: String, enum: ['user', 'staff', 'rider'], required: true },
         platform: { type: String, enum: ['android', 'ios', 'web'], required: true },
         lastSeenAt: { type: Date, default: Date.now }
     },

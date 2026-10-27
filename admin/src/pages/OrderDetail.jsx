@@ -6,7 +6,9 @@ import { api } from '../lib/api.js';
 import { useCurrentModule } from '../lib/moduleContext.jsx';
 import { formatPaise } from '../lib/money.js';
 import { CANCELLABLE, ITEM_EDITABLE, NEXT_ACTION_LABELS, PAYMENT_LABELS, STATUS_LABELS, STATUS_TONES, nextStatus } from '../lib/orders.js';
+import { ORDER_ASSIGNABLE } from '../lib/riders.js';
 import { Badge, ErrorNote, Modal } from '../components/ui.jsx';
+import { DeliveryCard } from '../components/riders.jsx';
 
 const when = (d) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -171,6 +173,14 @@ export default function OrderDetail() {
                         <p><span className="text-slate-500">Area: </span>{order.zone?.name}</p>
                         {order.notes && <p className="rounded bg-amber-50 p-2 text-amber-800">Note: {order.notes}</p>}
                     </section>
+
+                    <DeliveryCard
+                        refId={order._id}
+                        module={order.module}
+                        kind={ORDER_ASSIGNABLE.includes(order.status) ? 'order_delivery' : null}
+                        canAssign={canUpdate}
+                        onChanged={onDone}
+                    />
 
                     <section className="card space-y-1 text-sm">
                         <h2 className="mb-2 font-semibold">Payment</h2>

@@ -24,6 +24,8 @@ const Orders = lazy(() => import('./pages/Orders.jsx'));
 const ProductEditor = lazy(() => import('./pages/ProductEditor.jsx'));
 const Products = lazy(() => import('./pages/Products.jsx'));
 const Reports = lazy(() => import('./pages/Reports.jsx'));
+const RiderDetail = lazy(() => import('./pages/Riders.jsx').then((m) => ({ default: m.RiderDetail })));
+const Riders = lazy(() => import('./pages/Riders.jsx').then((m) => ({ default: m.Riders })));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 const Slots = lazy(() => import('./pages/Slots.jsx'));
 const Staff = lazy(() => import('./pages/Staff.jsx'));
@@ -87,6 +89,8 @@ createRoot(document.getElementById('root')).render(
                             <Route path="orders/:id" element={<RequirePermission section="orders"><OrderDetail /></RequirePermission>} />
                             <Route path="bookings" element={<RequirePermission section="bookings"><Bookings /></RequirePermission>} />
                             <Route path="bookings/:id" element={<RequirePermission section="bookings"><BookingDetail /></RequirePermission>} />
+                            <Route path="riders" element={<RequirePermission section="riders"><Riders /></RequirePermission>} />
+                            <Route path="riders/:id" element={<RequirePermission section="riders"><RiderDetail /></RequirePermission>} />
                             <Route path="laundry-services" element={<RequirePermission section="catalog"><LaundryServices /></RequirePermission>} />
                             <Route path="customers" element={<RequirePermission section="customers"><Customers /></RequirePermission>} />
                             <Route path="customers/:id" element={<RequirePermission section="customers"><CustomerDetail /></RequirePermission>} />

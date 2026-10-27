@@ -2,6 +2,7 @@ import { AuthError, ForbiddenError } from '../lib/errors.js';
 import { verifyAccessToken } from '../modules/auth/token.service.js';
 import { User } from '../modules/users/user.model.js';
 import { Staff } from '../modules/staff/staff.model.js';
+import { Rider } from '../modules/riders/rider.model.js';
 import { STAFF_ROLES } from '../modules/staff/permissions.js';
 
 const readBearer = (req) => {
@@ -19,9 +20,12 @@ export const authenticate = async (req, _res, next) => {
 
     const claims = verifyAccessToken(token);
     const isStaff = claims.kind === 'staff';
+    const isRider = claims.kind === 'rider';
     const doc = isStaff
         ? await Staff.findById(claims.sub).select('role isSuperAdmin permissions modules isActive tokenVersion').lean()
-        : await User.findById(claims.sub).select('isActive tokenVersion').lean();
+        : isRider
+            ? await Rider.findById(claims.sub).select('isActive tokenVersion modules').lean()
+            : await User.findById(claims.sub).select('isActive tokenVersion').lean();
 
     if (!doc) return next(new AuthError('Account not found'));
     if (!doc.isActive) return next(new AuthError('This account has been deactivated'));
@@ -36,9 +40,14 @@ export const authenticate = async (req, _res, next) => {
             permissions: doc.permissions || {},
             modules: doc.modules || []
         }
-        : { id: String(doc._id), kind: 'user', role: 'customer' };
+        : isRider
+            ? { id: String(doc._id), kind: 'rider', role: 'rider', modules: doc.modules || [] }
+            : { id: String(doc._id), kind: 'user', role: 'customer' };
     return next();
 };
+
+export const requireRider = (req, _res, next) =>
+    req.auth?.kind === 'rider' ? next() : next(new ForbiddenError('Delivery partner account required'));
 
 export const requireCustomer = (req, _res, next) =>
     req.auth?.kind === 'user' ? next() : next(new ForbiddenError('Customer account required'));

@@ -6,6 +6,7 @@ import { created, ok } from '../../lib/response.js';
 import { validate } from '../../lib/validate.js';
 import { allowedModules, authenticate, requireCustomer, requirePermission, requireStaff } from '../../middleware/auth.js';
 import { BOOKING_STATUSES } from './booking.flow.js';
+import { deliveryInfoFor } from '../riders/task.service.js';
 import * as laundry from './booking.service.js';
 
 const objectId = z.string().regex(/^[a-f0-9]{24}$/i, 'Invalid id');
@@ -61,7 +62,8 @@ customerLaundryRoutes.get(
 );
 
 customerLaundryRoutes.get('/bookings/:id', async (req, res) => {
-    ok(res, await laundry.getCustomerBooking(req.auth.id, req.params.id));
+    const booking = await laundry.getCustomerBooking(req.auth.id, req.params.id);
+    ok(res, { ...booking, delivery: await deliveryInfoFor(booking._id) });
 });
 
 customerLaundryRoutes.get('/bookings/:id/payment', async (req, res) => {

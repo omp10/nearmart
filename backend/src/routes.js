@@ -19,6 +19,7 @@ import { adminZoneRoutes, serviceabilityRoutes } from './modules/zones/zone.rout
 import paymentRoutes from './modules/payments/payment.routes.js';
 import staffRoutes from './modules/staff/staff.routes.js';
 import uploadRoutes from './modules/uploads/upload.routes.js';
+import { adminRiderRoutes, riderAppRoutes } from './modules/riders/rider.routes.js';
 
 /**
  * Everything under /api/v1. Path prefixes by audience, as modules land:
@@ -64,6 +65,8 @@ router.use('/settings', publicSettingsRoutes);
 router.use('/admin/banners', adminBannerRoutes);
 router.use('/banners', publicBannerRoutes);
 router.use('/admin/customers', customerAdminRoutes);
+router.use('/rider', riderAppRoutes);
+router.use('/admin/riders', adminRiderRoutes);
 router.use('/admin', reportRoutes);
 
 export default router;

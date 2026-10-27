@@ -76,6 +76,35 @@ router.post(
     }
 );
 
+// ─── Delivery partner OTP login (rider app) ───
+
+router.post('/rider/request-otp', authLimiter, validate(z.object({ phone: phoneField })), async (req, res) => {
+    ok(res, await auth.requestRiderOtp(req.body.phone), 'OTP sent');
+});
+
+router.post(
+    '/rider/verify-otp',
+    authLimiter,
+    validate(
+        z.object({
+            phone: phoneField,
+            otp: z.string().regex(/^\d{4,8}$/, 'Enter the OTP you received'),
+            device: z.object({ token: z.string().min(20).max(4096), platform: z.enum(['android', 'ios', 'web']) }).optional()
+        })
+    ),
+    async (req, res) => {
+        const session = await auth.verifyRiderOtp(req.body, meta(req));
+        if (req.body.device) {
+            try {
+                await registerDevice({ ownerKind: 'rider', ownerId: session.rider.id, ...req.body.device }, { exclusive: true });
+            } catch (err) {
+                logger.warn({ err: err.message }, 'Rider device registration at login failed');
+            }
+        }
+        ok(res, session, 'Signed in');
+    }
+);
+
 /**
  * CSRF guard for the cookie-carrying endpoints. Browsers send Origin on
  * POSTs; when one is present it must be this site or an allowed panel

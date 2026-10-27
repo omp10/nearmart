@@ -2,6 +2,7 @@ import { env } from '../../config/env.js';
 import { AuthError, ForbiddenError, TooManyRequestsError, ValidationError } from '../../lib/errors.js';
 import { User } from '../users/user.model.js';
 import { Staff } from '../staff/staff.model.js';
+import { Rider } from '../riders/rider.model.js';
 import { FULL_PERMISSIONS } from '../staff/permissions.js';
 import { requestOtp, verifyOtp } from './otp.service.js';
 import {
@@ -12,7 +13,7 @@ import {
     signAccessToken
 } from './token.service.js';
 
-const SUBJECT_MODELS = { user: User, staff: Staff };
+const SUBJECT_MODELS = { user: User, staff: Staff, rider: Rider };
 
 const issueSession = async (subject, meta, family) => {
     const accessToken = signAccessToken(subject);
@@ -81,6 +82,46 @@ export const verifyCustomerOtp = async ({ phone, otp, name }, meta = {}) => {
     return { ...session, isNewUser, needsName: !user.name, user: customerProfile(user) };
 };
 
+// ─── Delivery partners (rider app) ───
+
+export const riderProfile = (rider) => ({
+    id: String(rider._id),
+    name: rider.name,
+    phone: rider.phone,
+    vehicle: rider.vehicle,
+    modules: rider.modules,
+    isOnline: rider.isOnline,
+    payoutPerTaskPaise: rider.payoutPerTaskPaise,
+    cashInHandPaise: rider.cashInHandPaise
+});
+
+const notARider = () => new ForbiddenError("This number isn't registered as a Nearmart delivery partner");
+
+/** Only phones an admin registered as partners get a code. */
+export const requestRiderOtp = async (phone) => {
+    const rider = await Rider.findOne({ phone }).select('isActive').lean();
+    if (!rider) throw notARider();
+    if (!rider.isActive) throw new ForbiddenError('This delivery partner account is switched off. Please contact the store.');
+    return requestCustomerOtp(phone);
+};
+
+export const verifyRiderOtp = async ({ phone, otp }, meta = {}) => {
+    const rider = await Rider.findOne({ phone });
+    if (!rider) throw notARider();
+    const result = await verifyOtp(phone, otp);
+    if (!result.valid) throw new AuthError(result.reason);
+    if (!rider.isActive) throw new ForbiddenError('This delivery partner account is switched off. Please contact the store.');
+
+    // One phone at a time: a new sign-in ends the previous session.
+    rider.tokenVersion += 1;
+    rider.lastLoginAt = new Date();
+    await rider.save();
+    await revokeAllForSubject(rider._id, 'rider');
+
+    const session = await issueSession({ id: rider._id, kind: 'rider', role: 'rider', tokenVersion: rider.tokenVersion }, meta);
+    return { ...session, rider: riderProfile(rider) };
+};
+
 // ─── Staff (admin / ops panel) ───
 
 /** Wrong passwords allowed before an account locks, and for how long. */
@@ -141,7 +182,7 @@ export const refreshSession = async (rawToken, meta = {}) => {
         throw new AuthError('You were signed out because this account signed in elsewhere');
     }
 
-    const role = record.kind === 'user' ? 'customer' : subject.role;
+    const role = record.kind === 'user' ? 'customer' : record.kind === 'rider' ? 'rider' : subject.role;
     return {
         kind: record.kind,
         ...(await issueSession(
@@ -157,5 +198,6 @@ export const logout = (rawToken) => revokeRefreshToken(rawToken);
 export const getMe = async ({ id, kind }) => {
     const doc = await SUBJECT_MODELS[kind].findById(id).lean();
     if (!doc) throw new AuthError('Account not found');
+    if (kind === 'rider') return riderProfile(doc);
     return kind === 'user' ? customerProfile(doc) : staffProfile(doc);
 };
