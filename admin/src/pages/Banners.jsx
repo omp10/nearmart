@@ -29,6 +29,7 @@ function BannerForm({ banner, placement, onDone }) {
     const [form, setForm] = useState({
         title: banner?.title ?? '',
         image: banner?.image ?? '',
+        video: banner?.video ?? '',
         placement: banner?.placement ?? placement,
         linkType: banner?.link?.type ?? 'none',
         linkValue: banner?.link?.value ?? '',
@@ -54,6 +55,7 @@ function BannerForm({ banner, placement, onDone }) {
                 save.mutate({
                     title: form.title,
                     image: form.image,
+                    video: form.video,
                     placement: form.placement,
                     link: { type: form.linkType, value: form.linkType === 'none' ? '' : form.linkValue },
                     sortOrder: Number.parseInt(form.sortOrder, 10) || 0,
@@ -69,9 +71,18 @@ function BannerForm({ banner, placement, onDone }) {
                 <input id="bn-title" className="input" value={form.title} onChange={(e) => set({ title: e.target.value })} required maxLength={100} />
             </div>
             <div className="space-y-2">
-                <span className="label">Image</span>
-                {form.image && <img src={form.image} alt="" className="aspect-[3/1] w-full rounded-lg border object-cover" />}
-                <ImageUpload folder="banners" onUploaded={(image) => set({ image })} label={form.image ? 'Replace image' : 'Upload image (wide, about 3:1)'} />
+                <span className="label">Image (also the cover while a video loads)</span>
+                {form.image && <img src={form.image} alt="" className="aspect-[2/1] w-full rounded-lg border object-cover" />}
+                <ImageUpload folder="banners" onUploaded={(image) => set({ image })} label={form.image ? 'Replace image' : 'Upload image or GIF (1600 × 800, 2:1)'} />
+            </div>
+            <div className="space-y-2">
+                <span className="label">Video (optional)</span>
+                <p className="text-xs text-slate-500">MP4 or WebM, 2:1, a few seconds, up to 25 MB. It plays muted on a loop in place of the image.</p>
+                {form.video && <video src={form.video} poster={form.image || undefined} className="aspect-[2/1] w-full rounded-lg border object-cover" muted loop autoPlay playsInline />}
+                <div className="flex flex-wrap items-start gap-2">
+                    <ImageUpload kind="video" folder="banners" onUploaded={(video) => set({ video })} label={form.video ? 'Replace video' : 'Upload video'} />
+                    {form.video && <button type="button" className="btn-ghost text-red-600" onClick={() => set({ video: '' })}>Remove video</button>}
+                </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -154,7 +165,11 @@ export default function Banners() {
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {banners.map((b) => (
                     <div key={b._id} className="card space-y-2 p-3">
-                        <img src={b.image} alt={b.title} className="aspect-[3/1] w-full rounded-lg object-cover" />
+                        {b.video ? (
+                            <video src={b.video} poster={b.image} className="aspect-[2/1] w-full rounded-lg object-cover" muted loop autoPlay playsInline />
+                        ) : (
+                            <img src={b.image} alt={b.title} className="aspect-[2/1] w-full rounded-lg object-cover" />
+                        )}
                         <div className="flex items-start justify-between gap-2">
                             <div>
                                 <p className="font-medium">{b.title}</p>

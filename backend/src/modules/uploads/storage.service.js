@@ -14,7 +14,11 @@ import { ValidationError } from '../../lib/errors.js';
 export const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 /** Folders callers may write to; keeps arbitrary client strings off the disk layout. */
-export const UPLOAD_FOLDERS = Object.freeze(['catalog', 'categories', 'banners', 'services', 'profiles', 'misc']);
+export const UPLOAD_FOLDERS = Object.freeze(['catalog', 'categories', 'banners', 'offers', 'services', 'profiles', 'deliveries', 'misc']);
+
+/** Short looping clips (banners). Stored as received, so the container is checked from its magic bytes. */
+export const VIDEO_MIME_TYPES = Object.freeze({ 'video/mp4': '.mp4', 'video/webm': '.webm' });
+export const VIDEO_FOLDERS = Object.freeze(['banners']);
 
 export const assertFolder = (folder) => {
     if (!UPLOAD_FOLDERS.includes(folder)) {
@@ -78,12 +82,7 @@ const encode = async (buffer, mimeType) => {
     }
 };
 
-/** @param {{ buffer: Buffer, mimetype: string }} file a multer memory-storage file */
-export const saveImage = async (file, folder) => {
-    if (!file?.buffer?.length) throw new ValidationError('File is required');
-    if (!IMAGE_MIME_TYPES.has(file.mimetype)) throw new ValidationError('Only JPEG, PNG, WebP and GIF images are allowed');
-
-    const { buffer, ext, mimeType } = await encode(file.buffer, file.mimetype);
+const writeUpload = async (buffer, folder, ext, mimeType) => {
     const month = new Date().toISOString().slice(0, 7);
     const filename = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
     const relativePath = path.posix.join(assertFolder(folder), month, filename);
@@ -93,4 +92,33 @@ export const saveImage = async (file, folder) => {
     await fs.writeFile(absolute, buffer);
 
     return { url: publicUrl(relativePath), path: relativePath, mimeType, size: buffer.length };
+};
+
+/** @param {{ buffer: Buffer, mimetype: string }} file a multer memory-storage file */
+export const saveImage = async (file, folder) => {
+    if (!file?.buffer?.length) throw new ValidationError('File is required');
+    if (!IMAGE_MIME_TYPES.has(file.mimetype)) throw new ValidationError('Only JPEG, PNG, WebP and GIF images are allowed');
+
+    const { buffer, ext, mimeType } = await encode(file.buffer, file.mimetype);
+    return writeUpload(buffer, folder, ext, mimeType);
+};
+
+/** MP4 has an `ftyp` box at byte 4; WebM starts with the EBML header 1A 45 DF A3. */
+const looksLike = (buffer, mimeType) =>
+    mimeType === 'video/mp4'
+        ? buffer.length > 12 && buffer.toString('latin1', 4, 8) === 'ftyp'
+        : buffer.length > 4 && buffer.readUInt32BE(0) === 0x1a45dfa3;
+
+/**
+ * Videos can't be re-encoded here, so they're kept as received, but only when
+ * the bytes really are an MP4 / WebM container, and only under a fixed
+ * extension that nginx serves with a video type.
+ */
+export const saveVideo = async (file, folder) => {
+    if (!file?.buffer?.length) throw new ValidationError('File is required');
+    const ext = VIDEO_MIME_TYPES[file.mimetype];
+    if (!ext) throw new ValidationError('Only MP4 and WebM videos are allowed');
+    if (!VIDEO_FOLDERS.includes(folder)) throw new ValidationError(`Videos can only go in: ${VIDEO_FOLDERS.join(', ')}`);
+    if (!looksLike(file.buffer, file.mimetype)) throw new ValidationError('File contents do not match its type');
+    return writeUpload(file.buffer, folder, ext, file.mimetype);
 };

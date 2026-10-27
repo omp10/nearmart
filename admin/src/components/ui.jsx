@@ -73,7 +73,12 @@ export const flattenTree = (nodes, trail = []) =>
         ...flattenTree(n.children, [...trail, n.name])
     ]);
 
-export function ImageUpload({ folder, onUploaded, label = 'Upload image' }) {
+const UPLOAD_KINDS = {
+    image: { path: '/uploads/image', accept: 'image/jpeg,image/png,image/webp,image/gif' },
+    video: { path: '/uploads/video', accept: 'video/mp4,video/webm' }
+};
+
+export function ImageUpload({ folder, onUploaded, label = 'Upload image', kind = 'image' }) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
 
@@ -86,7 +91,7 @@ export function ImageUpload({ folder, onUploaded, label = 'Upload image' }) {
         try {
             const form = new FormData();
             form.append('file', file);
-            const res = await api.post('/uploads/image', form, { params: { folder } });
+            const res = await api.post(UPLOAD_KINDS[kind].path, form, { params: { folder } });
             onUploaded(res.data.data.url);
         } catch (err) {
             setError(errorMessage(err, 'Upload failed'));
@@ -99,7 +104,7 @@ export function ImageUpload({ folder, onUploaded, label = 'Upload image' }) {
         <div>
             <label className={`btn-ghost cursor-pointer border border-dashed border-slate-300 ${busy ? 'opacity-60' : ''}`}>
                 {busy ? 'Uploading…' : label}
-                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={onChange} disabled={busy} />
+                <input type="file" accept={UPLOAD_KINDS[kind].accept} className="sr-only" onChange={onChange} disabled={busy} />
             </label>
             {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
         </div>

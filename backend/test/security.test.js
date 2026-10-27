@@ -100,3 +100,30 @@ describe('uploads', () => {
         expect(res.body.message).toMatch(/too large|not a valid image/);
     });
 });
+
+describe('video uploads (banner clips)', () => {
+    const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(64)]);
+    const send = (token, buffer, contentType, folder = 'banners') =>
+        api().post(`/api/v1/uploads/video?folder=${folder}`).set('Authorization', `Bearer ${token}`).attach('file', buffer, { filename: 'clip', contentType });
+
+    it('stores a real MP4 for staff and serves it as a banner video', async () => {
+        const { token } = await loginStaff(await createStaff());
+        const res = await send(token, mp4, 'video/mp4');
+        expect(res.status, JSON.stringify(res.body)).toBe(201);
+        expect(res.body.data.path).toMatch(/^banners\/.+\.mp4$/);
+
+        const banner = await api().post('/api/v1/admin/banners').set('Authorization', `Bearer ${token}`).send({ title: 'Clip', image: '/uploads/a.webp', video: res.body.data.url });
+        expect(banner.status, JSON.stringify(banner.body)).toBe(201);
+        const live = await api().get('/api/v1/banners');
+        expect(live.body.data.find((b) => b.title === 'Clip').video).toBe(res.body.data.url);
+    });
+
+    it('rejects non-video bytes, other types, other folders and customers', async () => {
+        const { token } = await loginStaff(await createStaff());
+        expect((await send(token, Buffer.from('<script>alert(1)</script>'.repeat(4)), 'video/mp4')).status).toBe(400);
+        expect((await send(token, mp4, 'video/quicktime')).status).toBe(400);
+        expect((await send(token, mp4, 'video/mp4', 'catalog')).status).toBe(400);
+        const customer = await loginCustomer();
+        expect((await send(customer.accessToken, mp4, 'video/mp4')).status).toBe(403);
+    });
+});

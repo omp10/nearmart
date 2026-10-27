@@ -9,6 +9,7 @@ import { BANNER_LINK_TYPES, BANNER_PLACEMENTS, Banner } from './banner.model.js'
 const fields = {
     title: z.string().trim().min(1).max(100),
     image: z.string().trim().min(1, 'Upload an image').max(500),
+    video: z.string().trim().max(500).optional(),
     placement: z.enum(BANNER_PLACEMENTS).optional(),
     link: z.object({ type: z.enum(BANNER_LINK_TYPES), value: z.string().trim().max(500).optional() }).optional(),
     sortOrder: z.number().int().optional(),
@@ -31,7 +32,7 @@ publicBannerRoutes.get('/', validate(z.object({ placement: z.enum(BANNER_PLACEME
     })
         .sort({ sortOrder: 1, createdAt: -1 })
         .lean();
-    ok(res, rows.map(({ _id, title, image, link }) => ({ id: String(_id), title, image, link })));
+    ok(res, rows.map(({ _id, title, image, video, link }) => ({ id: String(_id), title, image, video: video || '', link })));
 });
 
 export const adminBannerRoutes = Router();

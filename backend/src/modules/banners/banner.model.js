@@ -12,6 +12,8 @@ const bannerSchema = new mongoose.Schema(
     {
         title: { type: String, required: true, trim: true, maxlength: 100 },
         image: { type: String, required: true },
+        /** Optional MP4 / WebM clip that plays in place of the image (which stays as its cover). */
+        video: { type: String, trim: true, default: '' },
         placement: { type: String, enum: BANNER_PLACEMENTS, default: 'home' },
         link: {
             type: { type: String, enum: BANNER_LINK_TYPES, default: 'none' },

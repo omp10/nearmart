@@ -71,6 +71,7 @@ const schema = z
         /** Public URL prefix the stored path is served under (nginx in production). */
         UPLOAD_BASE_URL: z.string().default('/uploads'),
         UPLOAD_MAX_IMAGE_MB: z.coerce.number().positive().default(5),
+        UPLOAD_MAX_VIDEO_MB: z.coerce.number().positive().default(25),
         UPLOAD_WEBP_QUALITY: z.coerce.number().int().min(1).max(100).default(90),
         UPLOAD_WEBP_MAX_WIDTH: z.coerce.number().int().positive().default(2560),
 
