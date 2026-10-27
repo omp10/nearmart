@@ -33,6 +33,19 @@ describe('staff login', () => {
         expect(res.body.data.refreshToken).toBeUndefined();
     });
 
+    it('returns the refresh token in the body for the mobile staff app', async () => {
+        const staff = await createStaff();
+        const login = await api().post('/api/v1/auth/staff/login').set('X-Client', 'mobile').send({ email: staff.email, password: PASSWORD });
+        expect(login.status).toBe(200);
+        expect(login.body.data.refreshToken).toBeTruthy();
+
+        const refreshed = await api().post('/api/v1/auth/refresh').set('X-Client', 'mobile').send({ refreshToken: login.body.data.refreshToken });
+        expect(refreshed.status).toBe(200);
+        expect(refreshed.body.data.accessToken).toBeTruthy();
+        expect(refreshed.body.data.refreshToken).toBeTruthy();
+        expect(refreshed.body.data.refreshToken).not.toBe(login.body.data.refreshToken);
+    });
+
     it('allows several concurrent staff sessions', async () => {
         const staff = await createStaff();
         const a = await loginStaff(staff);

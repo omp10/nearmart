@@ -89,7 +89,13 @@ const trustedOrigin = (req, _res, next) => {
     return next(new ForbiddenError('Request from an untrusted site'));
 };
 
-// ─── Staff login (admin / ops panel) ───
+/**
+ * Native staff apps (seller / store app) can't rely on the httpOnly cookie, so
+ * a request marked `X-Client: mobile` also gets the refresh token in the body.
+ */
+const isMobileClient = (req) => req.get('x-client') === 'mobile';
+
+// ─── Staff login (admin / ops panel, seller app) ───
 
 router.post(
     '/staff/login',
@@ -99,7 +105,7 @@ router.post(
     async (req, res) => {
         const { refreshToken, ...session } = await auth.staffLogin(req.body, meta(req));
         res.cookie(REFRESH_COOKIE, refreshToken, cookieOptions());
-        ok(res, session, 'Signed in');
+        ok(res, isMobileClient(req) ? { ...session, refreshToken } : session, 'Signed in');
     }
 );
 
@@ -130,7 +136,7 @@ router.post('/refresh', trustedOrigin, validate(z.object({ refreshToken: z.strin
     );
     if (kind === 'staff') {
         res.cookie(REFRESH_COOKIE, refreshToken, cookieOptions());
-        return ok(res, session, 'Session refreshed');
+        return ok(res, isMobileClient(req) ? { ...session, refreshToken } : session, 'Session refreshed');
     }
     return ok(res, { ...session, refreshToken }, 'Session refreshed');
 });
