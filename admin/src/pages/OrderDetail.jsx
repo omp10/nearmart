@@ -76,6 +76,21 @@ export default function OrderDetail() {
                         <Badge tone={STATUS_TONES[order.status]}>{STATUS_LABELS[order.status]}</Badge>
                     </h1>
                     <p className="text-sm text-slate-500">{order.module} · placed {when(order.createdAt)}</p>
+                    <p className="text-sm text-slate-500">
+                        {order.seller ? (
+                            <>
+                                Sold by{' '}
+                                {can('sellers') && order.seller.id ? (
+                                    <Link to={`/sellers/${order.seller.id}`} className="font-medium text-slate-700 hover:underline">{order.seller.name}</Link>
+                                ) : (
+                                    <span className="font-medium text-slate-700">{order.seller.name}</span>
+                                )}
+                                {' '}· {order.seller.commissionPercent ?? 0}% commission
+                            </>
+                        ) : (
+                            'Sold by Nearmart'
+                        )}
+                    </p>
                 </div>
                 {canUpdate && (
                     <div className="flex flex-wrap gap-2">

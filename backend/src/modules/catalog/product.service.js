@@ -41,12 +41,17 @@ const logInitialStock = (product, actor) => {
     return rows.length ? StockMovement.insertMany(rows) : null;
 };
 
-export const createProduct = async (input, { actor, allowedModules }) => {
+/**
+ * `seller` (seller dashboard) makes the product theirs; staff create
+ * Nearmart's own products, or a seller's when `input.seller` is set by an admin.
+ */
+export const createProduct = async (input, { actor, allowedModules, seller }) => {
     assertModule(allowedModules, input.module);
     const placement = await resolveCategory(input.category, input.module);
     const product = new Product({
         ...input,
         ...placement,
+        ...(seller ? { seller: seller._id, sellerName: seller.businessName, sellerHidden: false, isFeatured: false } : {}),
         slug: await uniqueSlug(Product, input.name)
     });
     await product.save();
@@ -54,9 +59,10 @@ export const createProduct = async (input, { actor, allowedModules }) => {
     return product;
 };
 
-export const getProduct = async (id, { allowedModules } = {}) => {
+export const getProduct = async (id, { allowedModules, sellerId } = {}) => {
+    if (!mongoose.isValidObjectId(id)) throw new NotFoundError('Product not found');
     const product = await Product.findById(id);
-    if (!product) throw new NotFoundError('Product not found');
+    if (!product || (sellerId && String(product.seller) !== String(sellerId))) throw new NotFoundError('Product not found');
     assertModule(allowedModules, product.module);
     return product;
 };
@@ -69,9 +75,9 @@ export const getProduct = async (id, { allowedModules } = {}) => {
  * If stock moves while this runs, the save hits a version conflict and the
  * edit is re-applied to a fresh copy, so an edit can't undo a sale.
  */
-export const updateProduct = async (id, input, { actor, allowedModules }) => {
+export const updateProduct = async (id, input, { actor, allowedModules, sellerId }) => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-        const product = await getProduct(id, { allowedModules });
+        const product = await getProduct(id, { allowedModules, sellerId });
         const { variants, category, module, ...fields } = input;
 
         if (module && module !== product.module) throw new ValidationError('A product cannot change module');
@@ -116,13 +122,21 @@ export const updateProduct = async (id, input, { actor, allowedModules }) => {
  * Deletes a product that was never ordered. One that was stays (orders,
  * reports and re-order link to it); hide it with "Visible to customers" off.
  */
-export const deleteProduct = async (id, { allowedModules }) => {
-    const product = await getProduct(id, { allowedModules });
+export const deleteProduct = async (id, { allowedModules, sellerId }) => {
+    const product = await getProduct(id, { allowedModules, sellerId });
     if (await Order.exists({ 'items.product': product._id })) {
         throw new ConflictError('This product has been ordered, so it can\'t be deleted. Untick "Visible to customers" to hide it instead.');
     }
     await product.deleteOne();
     await StockMovement.deleteMany({ product: product._id });
+};
+
+/** `sellerId` (seller dashboard) scopes to that seller; `seller` is the admin filter: 'nearmart' or a seller id. */
+const ownerFilter = (seller, sellerId) => {
+    if (sellerId) return { seller: toId(sellerId) };
+    if (seller === 'nearmart') return { seller: null };
+    if (seller && mongoose.isValidObjectId(seller)) return { seller: toId(seller) };
+    return {};
 };
 
 const lowStockExpr = {
@@ -140,8 +154,8 @@ const lowStockExpr = {
 };
 
 /** Admin product list: search by name/brand/SKU, filter by module, category, status and stock. */
-export const listProducts = async ({ q, module, category, status, stock, page, limit, sort }, { allowedModules }) => {
-    const filter = {};
+export const listProducts = async ({ q, module, category, status, stock, page, limit, sort, seller }, { allowedModules, sellerId }) => {
+    const filter = ownerFilter(seller, sellerId);
     if (module) {
         assertModule(allowedModules, module);
         filter.module = module;
@@ -167,7 +181,7 @@ export const listProducts = async ({ q, module, category, status, stock, page, l
     };
     const [items, total] = await Promise.all([
         Product.find(filter)
-            .select('module category name slug brand images isActive isFeatured minPricePaise totalStock inStock variants createdAt')
+            .select('module category name slug brand images isActive isFeatured minPricePaise totalStock inStock variants createdAt seller sellerName sellerHidden')
             .populate('category', 'name')
             .sort(sorts[sort] || sorts.newest)
             .skip((page - 1) * limit)
@@ -182,8 +196,8 @@ export const listProducts = async ({ q, module, category, status, stock, page, l
  * One row per variant for the inventory screen, lowest stock first, so what
  * needs restocking is on top.
  */
-export const listInventory = async ({ q, module, category, stock, page, limit }, { allowedModules }) => {
-    const match = {};
+export const listInventory = async ({ q, module, category, stock, page, limit, seller }, { allowedModules, sellerId }) => {
+    const match = ownerFilter(seller, sellerId);
     if (module) {
         assertModule(allowedModules, module);
         match.module = module;
@@ -238,8 +252,8 @@ export const listInventory = async ({ q, module, category, stock, page, limit },
 };
 
 /** Updates just the low-stock threshold of a variant (inventory screen). */
-export const setLowStockThreshold = async ({ productId, variantId, threshold }, { allowedModules }) => {
-    const product = await getProduct(productId, { allowedModules });
+export const setLowStockThreshold = async ({ productId, variantId, threshold }, { allowedModules, sellerId }) => {
+    const product = await getProduct(productId, { allowedModules, sellerId });
     const res = await Product.updateOne(
         { _id: product._id, 'variants._id': variantId },
         { $set: { 'variants.$.lowStockThreshold': threshold } }

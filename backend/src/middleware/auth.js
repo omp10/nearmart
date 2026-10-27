@@ -3,6 +3,7 @@ import { verifyAccessToken } from '../modules/auth/token.service.js';
 import { User } from '../modules/users/user.model.js';
 import { Staff } from '../modules/staff/staff.model.js';
 import { Rider } from '../modules/riders/rider.model.js';
+import { Seller } from '../modules/sellers/seller.model.js';
 import { STAFF_ROLES } from '../modules/staff/permissions.js';
 
 const readBearer = (req) => {
@@ -21,11 +22,14 @@ export const authenticate = async (req, _res, next) => {
     const claims = verifyAccessToken(token);
     const isStaff = claims.kind === 'staff';
     const isRider = claims.kind === 'rider';
+    const isSeller = claims.kind === 'seller';
     const doc = isStaff
         ? await Staff.findById(claims.sub).select('role isSuperAdmin permissions modules isActive tokenVersion').lean()
         : isRider
             ? await Rider.findById(claims.sub).select('isActive tokenVersion modules').lean()
-            : await User.findById(claims.sub).select('isActive tokenVersion').lean();
+            : isSeller
+                ? await Seller.findById(claims.sub).select('isActive tokenVersion status modules').lean()
+                : await User.findById(claims.sub).select('isActive tokenVersion').lean();
 
     if (!doc) return next(new AuthError('Account not found'));
     if (!doc.isActive) return next(new AuthError('This account has been deactivated'));
@@ -42,12 +46,30 @@ export const authenticate = async (req, _res, next) => {
         }
         : isRider
             ? { id: String(doc._id), kind: 'rider', role: 'rider', modules: doc.modules || [] }
-            : { id: String(doc._id), kind: 'user', role: 'customer' };
+            : isSeller
+                ? {
+                    id: String(doc._id),
+                    kind: 'seller',
+                    role: 'seller',
+                    status: doc.status,
+                    modules: (doc.modules || []).filter((m) => m.status === 'approved').map((m) => m.key)
+                }
+                : { id: String(doc._id), kind: 'user', role: 'customer' };
     return next();
 };
 
 export const requireRider = (req, _res, next) =>
     req.auth?.kind === 'rider' ? next() : next(new ForbiddenError('Delivery partner account required'));
+
+export const requireSeller = (req, _res, next) =>
+    req.auth?.kind === 'seller' ? next() : next(new ForbiddenError('Seller account required'));
+
+/** Selling (catalogue, orders, money) needs an approved store; the application screens don't. */
+export const requireApprovedSeller = (req, _res, next) => {
+    if (req.auth?.kind !== 'seller') return next(new ForbiddenError('Seller account required'));
+    if (req.auth.status === 'suspended') return next(new ForbiddenError('Your store is paused. Please contact Nearmart.'));
+    return req.auth.status === 'approved' ? next() : next(new ForbiddenError('Your store is not approved yet'));
+};
 
 export const requireCustomer = (req, _res, next) =>
     req.auth?.kind === 'user' ? next() : next(new ForbiddenError('Customer account required'));

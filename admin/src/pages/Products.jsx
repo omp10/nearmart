@@ -10,7 +10,7 @@ import { Badge, ErrorNote, Pager, flattenTree, useCategoryTree, useDebounced } f
 export default function Products() {
     const { can } = useAuth();
     const { module } = useCurrentModule();
-    const [filters, setFilters] = useState({ q: '', category: '', status: '', stock: '', sort: 'newest' });
+    const [filters, setFilters] = useState({ q: '', category: '', status: '', stock: '', seller: '', sort: 'newest' });
     const [page, setPage] = useState(1);
     const q = useDebounced(filters.q);
     const { data: tree = [] } = useCategoryTree(module);
@@ -21,12 +21,19 @@ export default function Products() {
     };
 
     const params = { module, page, limit: 20, q: q || undefined, category: filters.category || undefined,
-        status: filters.status || undefined, stock: filters.stock || undefined, sort: filters.sort };
+        status: filters.status || undefined, stock: filters.stock || undefined, seller: filters.seller || undefined, sort: filters.sort };
     const { data, isLoading, error } = useQuery({
         queryKey: ['products', params],
         queryFn: () => api.get('/admin/catalog/products', { params }).then((r) => r.data.data),
         placeholderData: keepPreviousData,
         enabled: module !== 'laundry'
+    });
+    // Seller names for the filter; staff without the Sellers section just get All / Nearmart.
+    const { data: sellers } = useQuery({
+        queryKey: ['sellers', { status: 'approved', limit: 100 }],
+        queryFn: () => api.get('/admin/sellers', { params: { status: 'approved', limit: 100 } }).then((r) => r.data.data),
+        enabled: can('sellers'),
+        staleTime: 5 * 60_000
     });
 
     // A category from another module would match nothing.
@@ -60,7 +67,7 @@ export default function Products() {
 
             <ModuleTabs productOnly />
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
                 <input
                     className="input lg:col-span-2"
                     placeholder="Search name, brand or SKU"
@@ -82,6 +89,11 @@ export default function Products() {
                     <option value="in">In stock</option>
                     <option value="low">Low stock</option>
                     <option value="out">Out of stock</option>
+                </select>
+                <select className="input" aria-label="Seller" value={filters.seller} onChange={(e) => setFilter({ seller: e.target.value })}>
+                    <option value="">All sellers</option>
+                    <option value="nearmart">Nearmart</option>
+                    {sellers?.items.map((s) => <option key={s._id} value={s._id}>{s.businessName}</option>)}
                 </select>
             </div>
 
@@ -120,6 +132,10 @@ export default function Products() {
                                         <span>
                                             <span className="block font-medium text-slate-800">{p.name}</span>
                                             {p.brand && <span className="block text-xs text-slate-500">{p.brand}</span>}
+                                            <span className="block text-xs text-slate-500">
+                                                {p.seller ? `Sold by ${p.sellerName || 'a seller'}` : 'Sold by Nearmart'}
+                                                {p.seller && p.sellerHidden && ' · hidden (seller not live)'}
+                                            </span>
                                         </span>
                                     </Link>
                                 </td>

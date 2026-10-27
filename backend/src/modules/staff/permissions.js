@@ -10,6 +10,8 @@ export const PERMISSION_SECTIONS = Object.freeze([
     'orders',
     'bookings',
     'riders',
+    'sellers',
+    'payouts',
     'customers',
     'zones',
     'banners',

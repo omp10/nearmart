@@ -1,8 +1,10 @@
 import { env } from '../../config/env.js';
-import { AuthError, ForbiddenError, TooManyRequestsError, ValidationError } from '../../lib/errors.js';
+import { AuthError, ConflictError, ForbiddenError, TooManyRequestsError, ValidationError } from '../../lib/errors.js';
 import { User } from '../users/user.model.js';
 import { Staff } from '../staff/staff.model.js';
 import { Rider } from '../riders/rider.model.js';
+import { Seller } from '../sellers/seller.model.js';
+import { sellerProfile } from '../sellers/seller.service.js';
 import { FULL_PERMISSIONS } from '../staff/permissions.js';
 import { requestOtp, verifyOtp } from './otp.service.js';
 import {
@@ -13,7 +15,7 @@ import {
     signAccessToken
 } from './token.service.js';
 
-const SUBJECT_MODELS = { user: User, staff: Staff, rider: Rider };
+const SUBJECT_MODELS = { user: User, staff: Staff, rider: Rider, seller: Seller };
 
 const issueSession = async (subject, meta, family) => {
     const accessToken = signAccessToken(subject);
@@ -122,6 +124,92 @@ export const verifyRiderOtp = async ({ phone, otp }, meta = {}) => {
     return { ...session, rider: riderProfile(rider) };
 };
 
+// ─── Marketplace sellers (seller dashboard) ───
+
+/**
+ * Sign-up: the phone is proven with an OTP, then the seller sets an email and
+ * password for the dashboard. The account starts as a draft application.
+ */
+export const requestSellerSignupOtp = async (phone) => {
+    if (await Seller.exists({ phone })) throw new ConflictError('This number already has a seller account. Sign in instead.');
+    return requestCustomerOtp(phone);
+};
+
+const sellerSession = async (seller, meta) => {
+    const session = await issueSession({ id: seller._id, kind: 'seller', role: 'seller', tokenVersion: seller.tokenVersion }, meta);
+    return { ...session, seller: sellerProfile(seller) };
+};
+
+export const registerSeller = async ({ phone, otp, businessName, ownerName, email, password }, meta = {}) => {
+    const normalizedEmail = String(email).toLowerCase().trim();
+    if (await Seller.exists({ phone })) throw new ConflictError('This number already has a seller account. Sign in instead.');
+    if (await Seller.exists({ email: normalizedEmail })) throw new ConflictError('This email already has a seller account');
+    const result = await verifyOtp(phone, otp);
+    if (!result.valid) throw new AuthError(result.reason);
+    const seller = await Seller.create({
+        phone,
+        email: normalizedEmail,
+        password,
+        businessName,
+        ownerName,
+        statusHistory: [{ status: 'draft', by: { kind: 'seller' } }]
+    });
+    seller.lastLoginAt = new Date();
+    await seller.save();
+    return sellerSession(seller, meta);
+};
+
+/** Email or phone plus password, with the same per-account lockout as staff. */
+export const sellerLogin = async ({ login, password }, meta = {}) => {
+    const key = String(login).trim().toLowerCase();
+    const seller = await Seller.findOne(/^\d{10}$/.test(key) ? { phone: key } : { email: key }).select('+password');
+    if (!seller) throw new AuthError('Invalid login or password');
+    if (seller.lockedUntil && seller.lockedUntil > new Date()) {
+        const minutes = Math.ceil((seller.lockedUntil - Date.now()) / 60000);
+        throw new TooManyRequestsError(`Too many wrong passwords. Try again in ${minutes} minute(s) or reset your password.`);
+    }
+    if (!(await seller.comparePassword(password))) {
+        const failed = await Seller.findOneAndUpdate({ _id: seller._id }, { $inc: { failedLogins: 1 } }, { new: true }).select('failedLogins');
+        if (failed.failedLogins >= MAX_FAILED_LOGINS) {
+            await Seller.updateOne({ _id: seller._id }, { $set: { failedLogins: 0, lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60000) } });
+        }
+        throw new AuthError('Invalid login or password');
+    }
+    if (!seller.isActive) throw new ForbiddenError('This seller account has been switched off. Please contact Nearmart.');
+    seller.lastLoginAt = new Date();
+    seller.failedLogins = 0;
+    seller.lockedUntil = null;
+    await seller.save();
+    return sellerSession(seller, meta);
+};
+
+export const requestSellerResetOtp = async (phone) => {
+    // Same answer whether or not the number is registered, so the form can't be used to find sellers.
+    if (!(await Seller.exists({ phone }))) return {};
+    return requestCustomerOtp(phone);
+};
+
+export const resetSellerPassword = async ({ phone, otp, password }) => {
+    const seller = await Seller.findOne({ phone }).select('+password');
+    const result = await verifyOtp(phone, otp);
+    if (!seller || !result.valid) throw new AuthError(result.reason || 'Invalid code');
+    seller.password = password;
+    seller.tokenVersion += 1;
+    seller.failedLogins = 0;
+    seller.lockedUntil = null;
+    await seller.save();
+    await revokeAllForSubject(seller._id, 'seller');
+};
+
+export const changeSellerPassword = async (sellerId, { currentPassword, newPassword }) => {
+    const seller = await Seller.findById(sellerId).select('+password');
+    if (!seller || !(await seller.comparePassword(currentPassword))) throw new ValidationError('Current password is incorrect');
+    seller.password = newPassword;
+    seller.tokenVersion += 1;
+    await seller.save();
+    await revokeAllForSubject(seller._id, 'seller');
+};
+
 // ─── Staff (admin / ops panel) ───
 
 /** Wrong passwords allowed before an account locks, and for how long. */
@@ -182,7 +270,7 @@ export const refreshSession = async (rawToken, meta = {}) => {
         throw new AuthError('You were signed out because this account signed in elsewhere');
     }
 
-    const role = record.kind === 'user' ? 'customer' : record.kind === 'rider' ? 'rider' : subject.role;
+    const role = { user: 'customer', rider: 'rider', seller: 'seller' }[record.kind] ?? subject.role;
     return {
         kind: record.kind,
         ...(await issueSession(
@@ -199,5 +287,6 @@ export const getMe = async ({ id, kind }) => {
     const doc = await SUBJECT_MODELS[kind].findById(id).lean();
     if (!doc) throw new AuthError('Account not found');
     if (kind === 'rider') return riderProfile(doc);
+    if (kind === 'seller') return sellerProfile(doc);
     return kind === 'user' ? customerProfile(doc) : staffProfile(doc);
 };

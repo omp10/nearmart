@@ -22,7 +22,7 @@ when it outgrows one machine.
 sudo apt update && sudo apt install -y nginx git
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install -y nodejs
 sudo npm i -g pm2
-sudo mkdir -p /var/www/nearmart/{uploads,admin} && sudo chown -R $USER /var/www/nearmart
+sudo mkdir -p /var/www/nearmart/{uploads,admin,seller,private-uploads} && sudo chown -R $USER /var/www/nearmart
 ```
 
 **MongoDB.** Atlas (M10 or larger, region `ap-south-1` Mumbai) is the simplest choice: backups and
@@ -36,6 +36,7 @@ cd /var/www/nearmart
 git clone <repo-url> app && cd app
 cd backend && npm ci --omit=dev && cd ..
 cd admin && npm ci && npm run build && cp -r dist/* /var/www/nearmart/admin/ && cd ..
+cd seller && npm ci && npm run build && cp -r dist/* /var/www/nearmart/seller/ && cd ..
 cp backend/.env.example backend/.env && chmod 600 backend/.env
 ```
 
@@ -137,6 +138,7 @@ sudo apt install -y certbot python3-certbot-nginx && sudo certbot --nginx -d adm
 cd /var/www/nearmart/app && git pull
 cd backend && npm ci --omit=dev && npm run db:indexes && cd ..
 cd admin && npm ci && npm run build && rsync -a --delete dist/ /var/www/nearmart/admin/ && cd ..
+cd seller && npm ci && npm run build && rsync -a --delete dist/ /var/www/nearmart/seller/ && cd ..
 pm2 reload nearmart-api
 ```
 

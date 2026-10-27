@@ -35,7 +35,7 @@ export const resolveLines = async (items) => {
         const base = { productId: String(item.product), variantId: String(item.variant), qty: item.qty };
 
         const unavailable =
-            !product || !variant || !product.isActive || !variant.isActive ||
+            !product || !variant || !product.isActive || !variant.isActive || product.sellerHidden ||
             inactiveModules.includes(product.module) || product.categoryPath.some((c) => hidden.has(String(c)));
         if (unavailable) return { ...base, module: product?.module ?? null, name: product?.name ?? 'Unavailable item', issue: 'unavailable' };
 
@@ -44,6 +44,8 @@ export const resolveLines = async (items) => {
         return {
             ...base,
             module: product.module,
+            sellerId: product.seller ? String(product.seller) : null,
+            sellerName: product.seller ? product.sellerName : 'Nearmart',
             name: product.name,
             brand: product.brand,
             image: product.images[0] || null,
@@ -68,12 +70,17 @@ export const getCart = async (userId) => {
     const groups = {};
     for (const line of lines) {
         const key = line.module ?? 'unavailable';
-        groups[key] ??= { module: key, lines: [], subtotalPaise: 0, itemCount: 0, hasIssues: false };
+        groups[key] ??= { module: key, lines: [], subtotalPaise: 0, itemCount: 0, hasIssues: false, sellers: [] };
         const group = groups[key];
         group.lines.push(line);
         if (!line.issue) {
             group.subtotalPaise += line.lineTotalPaise;
             group.itemCount += line.qty;
+            // Items from different marketplace sellers are checked out as separate orders.
+            let seller = group.sellers.find((s) => s.sellerId === line.sellerId);
+            if (!seller) group.sellers.push((seller = { sellerId: line.sellerId, name: line.sellerName, subtotalPaise: 0, itemCount: 0 }));
+            seller.subtotalPaise += line.lineTotalPaise;
+            seller.itemCount += line.qty;
         } else {
             group.hasIssues = true;
         }

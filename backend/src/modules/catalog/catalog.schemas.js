@@ -83,7 +83,9 @@ export const productListQuery = z.object({
     category: objectId.optional(),
     status: z.enum(['active', 'inactive']).optional(),
     stock: z.enum(['in', 'out', 'low']).optional(),
-    sort: z.enum(['newest', 'name', 'price_asc', 'price_desc', 'stock_asc']).optional()
+    sort: z.enum(['newest', 'name', 'price_asc', 'price_desc', 'stock_asc']).optional(),
+    /** 'nearmart' or a seller id (admin); ignored on the seller dashboard, which always sees its own. */
+    seller: z.string().trim().max(30).optional()
 });
 
 export const inventoryListQuery = productListQuery.omit({ status: true, sort: true });

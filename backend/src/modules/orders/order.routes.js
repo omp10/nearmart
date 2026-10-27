@@ -14,7 +14,9 @@ const objectId = z.string().regex(/^[a-f0-9]{24}$/i, 'Invalid id');
 const checkoutFields = {
     module: z.enum(PRODUCT_MODULES),
     addressId: objectId,
-    couponCode: z.string().trim().max(20).optional()
+    couponCode: z.string().trim().max(20).optional(),
+    /** Which store to check out when the cart mixes marketplace sellers; '' = Nearmart's own items. */
+    sellerId: z.union([objectId, z.literal('')]).optional()
 };
 
 // ─── Customer ───
@@ -24,13 +26,14 @@ checkoutRoutes.use(authenticate, requireCustomer);
 
 /** Prices one module's part of the cart for the checkout screen. Changes nothing. */
 checkoutRoutes.post('/quote', validate(z.object(checkoutFields)), async (req, res) => {
-    const { lines, pricing, slotRequired, zone, coupon } = await orders.quote(req.auth.id, req.body);
+    const { lines, pricing, slotRequired, zone, coupon, seller } = await orders.quote(req.auth.id, req.body);
     ok(res, {
         lines,
         pricing,
         slotRequired,
         zone: { id: String(zone._id), name: zone.name, minOrderPaise: zone.minOrderPaise, freeDeliveryAbovePaise: zone.freeDeliveryAbovePaise },
-        coupon: coupon ? { code: coupon.code, description: coupon.description } : null
+        coupon: coupon ? { code: coupon.code, description: coupon.description } : null,
+        seller: seller ? { id: String(seller._id), name: seller.businessName } : null
     });
 });
 

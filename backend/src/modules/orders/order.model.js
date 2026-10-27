@@ -49,6 +49,20 @@ const orderSchema = new mongoose.Schema(
         orderNumber: { type: String, required: true, unique: true },
         user: { type: ObjectId, ref: 'User', required: true },
         module: { type: String, enum: PRODUCT_MODULES, required: true },
+        /**
+         * The marketplace seller fulfilling this order, with the commission
+         * agreed when it was placed (null = Nearmart's own stock).
+         */
+        seller: {
+            type: new mongoose.Schema(
+                { id: { type: ObjectId, ref: 'Seller' }, name: String, commissionPercent: Number, fixedFeePaise: Number },
+                { _id: false }
+            ),
+            default: null
+        },
+        /** The settlement that paid the seller for this order. */
+        payout: { type: ObjectId, ref: 'Payout', default: null },
+        deliveredAt: { type: Date, default: null },
         items: { type: [lineSchema], validate: [(v) => v.length > 0, 'An order needs items'] },
         address: {
             name: String,
@@ -95,7 +109,7 @@ const orderSchema = new mongoose.Schema(
                     _id: false,
                     status: String,
                     at: { type: Date, default: Date.now },
-                    by: { kind: { type: String, enum: ['user', 'staff', 'rider', 'system'] }, id: ObjectId },
+                    by: { kind: { type: String, enum: ['user', 'staff', 'rider', 'seller', 'system'] }, id: ObjectId },
                     note: { type: String, default: '' }
                 }
             ],
@@ -113,5 +127,6 @@ orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ module: 1, status: 1, createdAt: -1 });
 orderSchema.index({ status: 1, paymentDueBy: 1 });
 orderSchema.index({ customerPhone: 1 });
+orderSchema.index({ 'seller.id': 1, status: 1, createdAt: -1 });
 
 export const Order = mongoose.model('Order', orderSchema);

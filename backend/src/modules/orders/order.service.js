@@ -19,6 +19,8 @@ import { SlotRule } from '../slots/slot.model.js';
 import { releaseSlot, reserveSlot } from '../slots/slot.service.js';
 import { User } from '../users/user.model.js';
 import { zoneForAddress } from '../zones/zone.service.js';
+import { Seller } from '../sellers/seller.model.js';
+import { commissionFor, getConfig } from '../sellers/seller.service.js';
 import { CANCELLABLE_BY_CUSTOMER, CANCELLABLE_BY_STAFF, CUSTOMER_MESSAGES, ITEM_EDITABLE, STATUS_LABELS, canMove } from './order.flow.js';
 import { Order } from './order.model.js';
 import { priceLines } from './pricing.service.js';
@@ -42,9 +44,20 @@ const notifyCustomer = (order, status, extra = '') =>
         }
     ).catch((err) => logger.warn({ err: err.message }, 'Order notification failed'));
 
-/** Tells the staff who handle this module's orders that one needs accepting. */
-const alertStaffNewOrder = (order) =>
-    notifyStaff(
+/** Tells the staff who handle this module's orders (and the order's seller) that one needs accepting. */
+const alertStaffNewOrder = (order) => {
+    if (order.seller?.id) {
+        notify(
+            { ownerKind: 'seller', ownerId: order.seller.id },
+            {
+                title: `New order #${order.orderNumber}`,
+                body: `${order.items.length} item${order.items.length > 1 ? 's' : ''} · accept and pack it from your dashboard`,
+                type: 'seller.order.new',
+                data: { orderId: String(order._id) }
+            }
+        ).catch(() => {});
+    }
+    return notifyStaff(
         { module: order.module, section: 'orders' },
         {
             title: `New order #${order.orderNumber}`,
@@ -53,6 +66,7 @@ const alertStaffNewOrder = (order) =>
             data: { orderId: String(order._id) }
         }
     );
+};
 
 /** Runs compensation steps newest-first, logging (not throwing) any that fail. */
 const rollback = async (undo) => {
@@ -69,13 +83,35 @@ const rollback = async (undo) => {
  * Works out a checkout for one module's part of the cart without changing
  * anything. Used for the checkout screen and repeated inside placeOrder.
  */
-export const quote = async (userId, { module, addressId, couponCode }) => {
+export const quote = async (userId, { module, addressId, couponCode, sellerId }) => {
     const address = await getAddress(userId, addressId);
     const zone = await zoneForAddress(address, module);
     if (!zone) throw new ValidationError('We do not deliver this section to that address yet');
 
-    const lines = await cartItemsForModule(userId, module);
+    let lines = await cartItemsForModule(userId, module);
     if (!lines.length) throw new ValidationError('Your cart has no items from this section');
+
+    // One order per seller. Nearmart's own stock has sellerId null; '' in the request also means Nearmart.
+    const sellerIds = [...new Set(lines.filter((l) => !l.issue).map((l) => l.sellerId ?? null))];
+    let wanted = sellerId === undefined ? undefined : sellerId || null;
+    if (wanted === undefined) {
+        if (sellerIds.length > 1) {
+            throw new AppError('Your cart has items from more than one store. Check out each store separately.', 409, sellerIds.map((id) => ({
+                sellerId: id, name: lines.find((l) => (l.sellerId ?? null) === id)?.sellerName ?? 'Nearmart', issue: 'choose_seller'
+            })));
+        }
+        wanted = sellerIds[0] ?? null;
+    }
+    lines = lines.filter((l) => (l.issue ? (l.sellerId ?? null) === wanted || !l.sellerId : (l.sellerId ?? null) === wanted));
+    if (!lines.length) throw new ValidationError('Your cart has no items from this store');
+    let seller = null;
+    if (wanted) {
+        seller = await Seller.findById(wanted).select('businessName status isOpen isActive zones commission modules').lean();
+        if (!seller || seller.status !== 'approved' || !seller.isOpen || !seller.isActive) throw new ConflictError('This store is not taking orders right now');
+        if (seller.zones?.length && !seller.zones.some((z) => String(z) === String(zone._id))) {
+            throw new ValidationError(`${seller.businessName} does not deliver to this address`);
+        }
+    }
     const problems = lines.filter((l) => l.issue);
     if (problems.length) {
         throw new AppError('Some items in your cart need attention', 409, problems.map((l) => ({
@@ -97,7 +133,7 @@ export const quote = async (userId, { module, addressId, couponCode }) => {
     const slotRequired = Boolean(
         await SlotRule.exists({ module, kind: 'delivery', isActive: true, zone: { $in: [null, zone._id] } })
     );
-    return { address, zone, lines, coupon, slotRequired, pricing: priceLines(lines, { zone, coupon }) };
+    return { address, zone, lines, coupon, slotRequired, seller, pricing: priceLines(lines, { zone, coupon }) };
 };
 
 /** Unpaid orders and open orders one customer may hold at a time. */
@@ -125,10 +161,11 @@ const assertWithinOpenLimits = async (userId) => {
  * so each side effect registers how to undo itself, and any failure unwinds
  * the ones already done: slot, stock per line, coupon, order.
  */
-export const placeOrder = async (userId, { module, addressId, slotId, couponCode, paymentMethod, notes = '' }) => {
+export const placeOrder = async (userId, { module, addressId, slotId, couponCode, paymentMethod, notes = '', sellerId }) => {
     if (paymentMethod === 'online' && !(await gatewayConfig()).enabled) throw new ValidationError('Online payment is not available right now');
 
-    const { address, zone, lines, coupon, slotRequired, pricing } = await quote(userId, { module, addressId, couponCode });
+    const { address, zone, lines, coupon, slotRequired, seller, pricing } = await quote(userId, { module, addressId, couponCode, sellerId });
+    const rate = seller ? commissionFor(seller, module, await getConfig()) : null;
     await assertCheckoutAllowed({ paymentMethod, totalPaise: pricing.totalPaise });
     await assertWithinOpenLimits(userId);
     if (slotRequired && !slotId) throw new ValidationError('Please choose a delivery slot');
@@ -169,6 +206,7 @@ export const placeOrder = async (userId, { module, addressId, slotId, couponCode
             orderNumber: newOrderNumber(),
             user: userId,
             module,
+            seller: seller ? { id: seller._id, name: seller.businessName, commissionPercent: rate.percent, fixedFeePaise: rate.fixedFeePaise } : null,
             items: lines.map((l) => ({
                 product: l.productId,
                 variant: l.variantId,
@@ -231,10 +269,11 @@ export const placeOrder = async (userId, { module, addressId, slotId, couponCode
     }
 };
 
-const loadOrder = async (orderId, { userId, allowedModules } = {}) => {
+const loadOrder = async (orderId, { userId, allowedModules, sellerId } = {}) => {
     if (!mongoose.isValidObjectId(orderId)) throw new NotFoundError('Order not found');
     const order = await Order.findById(orderId);
     if (!order || (userId && String(order.user) !== String(userId))) throw new NotFoundError('Order not found');
+    if (sellerId && String(order.seller?.id) !== String(sellerId)) throw new NotFoundError('Order not found');
     if (allowedModules && !allowedModules.includes(order.module)) throw new ForbiddenError(`No access to the ${order.module} module`);
     return order;
 };
@@ -259,8 +298,8 @@ const requestRefund = async (order, amountPaise, reason) => {
  * held: stock (except lines found unavailable), slot, coupon use, and money
  * if it was paid online.
  */
-export const cancelOrder = async (orderId, { by, reason = '', allowed = CANCELLABLE_BY_STAFF, userId, allowedModules } = {}) => {
-    const current = await loadOrder(orderId, { userId, allowedModules });
+export const cancelOrder = async (orderId, { by, reason = '', allowed = CANCELLABLE_BY_STAFF, userId, allowedModules, sellerId } = {}) => {
+    const current = await loadOrder(orderId, { userId, allowedModules, sellerId });
     const order = await Order.findOneAndUpdate(
         { _id: current._id, status: { $in: allowed } },
         {
@@ -286,25 +325,32 @@ export const cancelOrder = async (orderId, { by, reason = '', allowed = CANCELLA
     // Any delivery partner on this job is stood down (loaded lazily: the riders module depends on this one).
     import('../riders/task.service.js').then((m) => m.cancelTasksForRef(order._id, reason || 'Cancelled')).catch(() => {});
     notifyCustomer(order, 'cancelled', paidOnline(order) ? 'Your refund has been started.' : '');
-    if (by?.kind === 'user') {
+    if (by?.kind === 'user' && order.seller?.id) {
+        notify(
+            { ownerKind: 'seller', ownerId: order.seller.id },
+            { title: `Order #${order.orderNumber} cancelled by customer`, body: reason, type: 'seller.order.cancelled', data: { orderId: String(order._id) } }
+        ).catch(() => {});
+    }
+    if (by?.kind === 'user' || by?.kind === 'seller') {
         notifyStaff(
             { module: order.module, section: 'orders' },
-            { title: `Order #${order.orderNumber} cancelled by customer`, body: reason, type: 'staff.order.cancelled', data: { orderId: String(order._id) } }
+            { title: `Order #${order.orderNumber} cancelled by ${by.kind === 'seller' ? 'the seller' : 'customer'}`, body: reason, type: 'staff.order.cancelled', data: { orderId: String(order._id) } }
         );
     }
     return Order.findById(order._id).lean();
 };
 
 /** Moves an order one step along its flow. Cancelling goes through cancelOrder. */
-export const advanceStatus = async (orderId, { to, by, note = '', allowedModules }) => {
-    const current = await loadOrder(orderId, { allowedModules });
-    if (to === 'cancelled') return cancelOrder(orderId, { by, reason: note, allowedModules });
+export const advanceStatus = async (orderId, { to, by, note = '', allowedModules, sellerId }) => {
+    const current = await loadOrder(orderId, { allowedModules, sellerId });
+    if (to === 'cancelled') return cancelOrder(orderId, { by, reason: note, allowedModules, sellerId });
     if (!canMove(current.status, to)) {
         throw new ConflictError(`An order that is "${STATUS_LABELS[current.status]}" can't move to "${STATUS_LABELS[to]}"`);
     }
     const set = { status: to };
     // Cash on delivery is collected at the door.
     if (to === 'delivered' && current.payment.method === 'cod') set['payment.status'] = 'paid';
+    if (to === 'delivered') set.deliveredAt = new Date();
 
     const order = await Order.findOneAndUpdate(
         { _id: current._id, status: current.status },
@@ -322,8 +368,8 @@ export const advanceStatus = async (orderId, { to, by, note = '', allowedModules
  * coupon discount; an online payment gets the difference refunded. If
  * nothing is left the order is cancelled.
  */
-export const markItemUnavailable = async (orderId, lineId, { by, note = '', allowedModules }) => {
-    const order = await loadOrder(orderId, { allowedModules });
+export const markItemUnavailable = async (orderId, lineId, { by, note = '', allowedModules, sellerId }) => {
+    const order = await loadOrder(orderId, { allowedModules, sellerId });
     if (!ITEM_EDITABLE.includes(order.status)) throw new ConflictError('Items can only be changed before the order is packed');
     const line = order.items.id(lineId);
     if (!line) throw new NotFoundError('Item not found on this order');
@@ -332,7 +378,7 @@ export const markItemUnavailable = async (orderId, lineId, { by, note = '', allo
     line.status = 'unavailable';
     if (order.items.every((l) => l.status === 'unavailable')) {
         await order.save();
-        return cancelOrder(order._id, { by, reason: 'None of the items were available', allowedModules });
+        return cancelOrder(order._id, { by, reason: 'None of the items were available', allowedModules, sellerId });
     }
 
     const previousTotal = order.pricing.totalPaise;
@@ -526,4 +572,33 @@ export const registerOrderPaymentHandlers = () => {
             logger.error({ err: err.message }, 'Applying refund to order failed');
         }
     });
+};
+
+// ─── Seller dashboard ───
+
+const sellerMatch = (sellerId) => ({ 'seller.id': new mongoose.Types.ObjectId(String(sellerId)), status: { $ne: 'pending_payment' } });
+
+/** A seller's own orders; ones still awaiting online payment aren't shown until paid. */
+export const listSellerOrders = async (sellerId, { status, from, to, q, page, limit }) => {
+    const filter = sellerMatch(sellerId);
+    if (status === 'open') filter.status = { $in: ['placed', 'accepted', 'packing', 'ready', 'dispatched'] };
+    else if (status && status !== 'pending_payment') filter.status = status;
+    if (from || to) filter.createdAt = { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) };
+    if (q) filter.orderNumber = new RegExp(escapeRegex(q.trim()), 'i');
+    const [items, total, counts] = await Promise.all([
+        Order.find(filter)
+            .select('orderNumber module status pricing.subtotalPaise pricing.totalPaise payment.method payment.status address.name address.pincode slot createdAt items.qty items.status items.name')
+            .sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+        Order.countDocuments(filter),
+        Order.aggregate([{ $match: sellerMatch(sellerId) }, { $group: { _id: '$status', n: { $sum: 1 } } }])
+    ]);
+    return { items, page, limit, total, pages: Math.ceil(total / limit), statusCounts: Object.fromEntries(counts.map((c) => [c._id, c.n])) };
+};
+
+/** One order as its seller sees it: what to pack and the delivery area, not the customer's phone or full address. */
+export const getSellerOrder = async (sellerId, orderId) => {
+    const order = (await loadOrder(orderId, { sellerId })).toObject();
+    if (order.status === 'pending_payment') throw new NotFoundError('Order not found');
+    const { customerPhone, address, user, ...rest } = order;
+    return { ...rest, address: { name: address?.name, city: address?.city, pincode: address?.pincode } };
 };

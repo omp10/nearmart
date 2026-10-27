@@ -1,0 +1,82 @@
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/500.css';
+@import '@fontsource/poppins/600.css';
+@import '@fontsource/poppins/700.css';
+@import 'tailwindcss';
+
+@theme {
+    /* Seller dashboard green, built around #0F4D2E (brand-700). */
+    --color-brand-50: #edf7f1;
+    --color-brand-100: #d2ecdc;
+    --color-brand-200: #a6d8b9;
+    --color-brand-500: #2a8a57;
+    --color-brand-600: #1b6b42;
+    --color-brand-700: #0f4d2e;
+    --color-brand-800: #0b3a22;
+    --color-brand-900: #072616;
+    /* Nearmart logo green and the shop colours from the bag. */
+    --color-mart: #30b34b;
+    --color-shop-grocery: #ef6c0a;
+    --color-shop-produce: #13a04e;
+    --color-shop-laundry: #0a6cff;
+    --color-shop-electronics: #7027e8;
+    --font-sans: 'Poppins', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+    /* Pages are written against slate; map it onto neutral greys, as in the admin panel. */
+    --color-slate-50: var(--color-neutral-50);
+    --color-slate-100: var(--color-neutral-100);
+    --color-slate-200: var(--color-neutral-200);
+    --color-slate-300: var(--color-neutral-300);
+    --color-slate-400: var(--color-neutral-400);
+    --color-slate-500: var(--color-neutral-500);
+    --color-slate-600: var(--color-neutral-600);
+    --color-slate-700: var(--color-neutral-700);
+    --color-slate-800: var(--color-neutral-800);
+    --color-slate-900: var(--color-neutral-900);
+}
+
+body {
+    @apply bg-neutral-100 text-neutral-800 antialiased;
+}
+
+@layer base {
+    /* Table headers: small, spaced capitals, as in every list page. */
+    thead th {
+        @apply text-[11px] font-semibold tracking-[0.08em] whitespace-nowrap text-neutral-500 uppercase;
+    }
+    thead {
+        @apply bg-neutral-50;
+    }
+    tbody tr {
+        @apply transition-colors hover:bg-neutral-50/70;
+    }
+    h1 {
+        @apply tracking-tight text-neutral-900;
+    }
+}
+
+/* Tailwind v4: shared component classes are declared with @utility so they can be composed with @apply. */
+@utility btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60;
+}
+@utility btn-primary {
+    @apply btn bg-brand-700 text-white shadow-sm hover:bg-brand-800;
+}
+@utility btn-ghost {
+    @apply btn text-neutral-600 hover:bg-neutral-100;
+}
+@utility btn-outline {
+    @apply btn border border-neutral-200 bg-white text-neutral-700 shadow-sm hover:bg-neutral-50;
+}
+@utility btn-danger {
+    @apply btn bg-red-600 text-white shadow-sm hover:bg-red-700;
+}
+@utility input {
+    @apply w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none transition placeholder:text-neutral-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-50 disabled:bg-neutral-50 disabled:text-neutral-500;
+}
+@utility label {
+    @apply mb-1.5 block text-sm font-medium text-neutral-700;
+}
+@utility card {
+    @apply rounded-xl border border-neutral-200 bg-white p-5 shadow-sm;
+}

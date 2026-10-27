@@ -21,11 +21,15 @@ const Inventory = lazy(() => import('./pages/Inventory.jsx'));
 const LaundryServices = lazy(() => import('./pages/LaundryServices.jsx'));
 const OrderDetail = lazy(() => import('./pages/OrderDetail.jsx'));
 const Orders = lazy(() => import('./pages/Orders.jsx'));
+const PayoutDetail = lazy(() => import('./pages/Payouts.jsx').then((m) => ({ default: m.PayoutDetail })));
+const Payouts = lazy(() => import('./pages/Payouts.jsx').then((m) => ({ default: m.Payouts })));
 const ProductEditor = lazy(() => import('./pages/ProductEditor.jsx'));
 const Products = lazy(() => import('./pages/Products.jsx'));
 const Reports = lazy(() => import('./pages/Reports.jsx'));
 const RiderDetail = lazy(() => import('./pages/Riders.jsx').then((m) => ({ default: m.RiderDetail })));
 const Riders = lazy(() => import('./pages/Riders.jsx').then((m) => ({ default: m.Riders })));
+const SellerDetail = lazy(() => import('./pages/Sellers.jsx').then((m) => ({ default: m.SellerDetail })));
+const Sellers = lazy(() => import('./pages/Sellers.jsx').then((m) => ({ default: m.Sellers })));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 const Slots = lazy(() => import('./pages/Slots.jsx'));
 const Staff = lazy(() => import('./pages/Staff.jsx'));
@@ -94,6 +98,10 @@ createRoot(document.getElementById('root')).render(
                             <Route path="laundry-services" element={<RequirePermission section="catalog"><LaundryServices /></RequirePermission>} />
                             <Route path="customers" element={<RequirePermission section="customers"><Customers /></RequirePermission>} />
                             <Route path="customers/:id" element={<RequirePermission section="customers"><CustomerDetail /></RequirePermission>} />
+                            <Route path="sellers" element={<RequirePermission section="sellers"><Sellers /></RequirePermission>} />
+                            <Route path="sellers/:id" element={<RequirePermission section="sellers"><SellerDetail /></RequirePermission>} />
+                            <Route path="payouts" element={<RequirePermission section="payouts"><Payouts /></RequirePermission>} />
+                            <Route path="payouts/:id" element={<RequirePermission section="payouts"><PayoutDetail /></RequirePermission>} />
                             <Route path="banners" element={<RequirePermission section="banners"><Banners /></RequirePermission>} />
                             <Route path="reports" element={<RequirePermission section="reports"><Reports /></RequirePermission>} />
                             <Route path="settings" element={<RequirePermission section="settings"><Settings /></RequirePermission>} />

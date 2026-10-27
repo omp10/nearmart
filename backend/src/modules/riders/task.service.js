@@ -11,6 +11,7 @@ import { advanceBooking } from '../laundry/booking.service.js';
 import { getSettings } from '../settings/settings.service.js';
 import { Rider } from './rider.model.js';
 import { ACTIVE_TASK_STATUSES, CashDeposit, DeliveryTask } from './task.model.js';
+import { sellerPlace } from '../sellers/seller.service.js';
 
 /** How long a partner has to accept an offer before it lapses and the store reassigns. */
 export const OFFER_MINUTES = 10;
@@ -123,7 +124,7 @@ export const createTask = async ({ kind, refId, riderId, payoutPaise }, { by, al
         if (!ORDER_ASSIGNABLE.includes(order.status)) throw new ConflictError('Only confirmed orders that are not yet delivered can be assigned');
         module = order.module;
         ref = { type: 'order', id: order._id, number: order.orderNumber };
-        pickup = await storePlace(module);
+        pickup = (order.seller?.id && (await sellerPlace(order.seller.id))) || (await storePlace(module));
         drop = fromAddress(order.address);
         items = order.items.filter((l) => l.status === 'ok').map((l) => ({ name: l.name, variantLabel: l.variantLabel, qty: l.qty }));
         slot = { date: order.slot?.date ?? '', label: order.slot?.label ?? '' };

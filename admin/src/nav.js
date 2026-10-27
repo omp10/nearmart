@@ -1,6 +1,6 @@
 import {
     BadgePercent, Bike, Boxes, CalendarClock, ChartColumn, FolderTree, LayoutDashboard, MapPinned, Megaphone,
-    Package, Settings, ShieldCheck, Shirt, ShoppingBag, Users, WashingMachine
+    Package, Settings, ShieldCheck, Shirt, ShoppingBag, Store, Users, Wallet, WashingMachine
 } from 'lucide-react';
 
 /** The Global view: things shared by every module (customers, settings, staff). */
@@ -47,8 +47,13 @@ export const NAV_GROUPS = [
         title: 'People',
         items: [
             { to: '/customers', label: 'Customers', section: 'customers', icon: Users, views: [GLOBAL] },
+            { to: '/sellers', label: 'Sellers', section: 'sellers', icon: Store, views: [GLOBAL] },
             { to: '/staff', label: 'Staff & roles', section: 'staff', icon: ShieldCheck, views: [GLOBAL] }
         ]
+    },
+    {
+        title: 'Money',
+        items: [{ to: '/payouts', label: 'Payouts', section: 'payouts', icon: Wallet, views: [GLOBAL] }]
     },
     {
         title: 'Delivery setup',
@@ -82,6 +87,8 @@ export const PERMISSION_SECTIONS = [
     { section: 'bookings', label: 'Laundry bookings' },
     { section: 'riders', label: 'Delivery partners' },
     { section: 'customers', label: 'Customers' },
+    { section: 'sellers', label: 'Sellers' },
+    { section: 'payouts', label: 'Seller payouts' },
     { section: 'zones', label: 'Service areas & slots' },
     { section: 'banners', label: 'Banners' },
     { section: 'coupons', label: 'Coupons' },

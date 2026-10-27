@@ -23,7 +23,7 @@ const stockMovementSchema = new mongoose.Schema(
         /** Order or booking that caused the change, when there is one. */
         refId: { type: mongoose.Schema.Types.ObjectId, default: null },
         actor: {
-            kind: { type: String, enum: ['staff', 'user', 'system'], default: 'system' },
+            kind: { type: String, enum: ['staff', 'user', 'seller', 'system'], default: 'system' },
             id: { type: mongoose.Schema.Types.ObjectId, default: null }
         }
     },

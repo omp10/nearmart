@@ -42,6 +42,11 @@ variantSchema.virtual('effectivePricePaise').get(function effectivePrice() {
 const productSchema = new mongoose.Schema(
     {
         module: { type: String, enum: PRODUCT_MODULES, required: true },
+        /** The marketplace seller who lists this product; null = sold by Nearmart itself. */
+        seller: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null, index: true },
+        sellerName: { type: String, default: '' },
+        /** Set while the seller is not approved, closed, or not approved for this module. */
+        sellerHidden: { type: Boolean, default: false },
         category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
         /** The category and all its ancestors, so filtering by a parent category finds this product. */
         categoryPath: { type: [mongoose.Schema.Types.ObjectId], default: [] },

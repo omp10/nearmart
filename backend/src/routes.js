@@ -21,6 +21,7 @@ import paymentRoutes from './modules/payments/payment.routes.js';
 import staffRoutes from './modules/staff/staff.routes.js';
 import uploadRoutes from './modules/uploads/upload.routes.js';
 import { adminRiderRoutes, riderAppRoutes } from './modules/riders/rider.routes.js';
+import { adminPayoutRoutes, adminSellerRoutes, sellerAppRoutes, sellerAuthRoutes } from './modules/sellers/seller.routes.js';
 
 /**
  * Everything under /api/v1. Path prefixes by audience, as modules land:
@@ -42,6 +43,7 @@ router.get('/openapi.yaml', (_req, res) => {
     res.type('application/yaml').sendFile(OPENAPI_FILE);
 });
 
+router.use('/auth/seller', sellerAuthRoutes);
 router.use('/auth', authRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/uploads', uploadRoutes);
@@ -70,6 +72,9 @@ router.use('/offer-cards', publicOfferCardRoutes);
 router.use('/admin/customers', customerAdminRoutes);
 router.use('/rider', riderAppRoutes);
 router.use('/admin/riders', adminRiderRoutes);
+router.use('/seller', sellerAppRoutes);
+router.use('/admin/sellers', adminSellerRoutes);
+router.use('/admin/payouts', adminPayoutRoutes);
 router.use('/admin', reportRoutes);
 
 export default router;

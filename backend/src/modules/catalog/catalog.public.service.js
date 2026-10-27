@@ -39,6 +39,7 @@ const publicProduct = (p, { detail = false } = {}) => {
         minPricePaise: p.minPricePaise,
         inStock: p.inStock,
         isFeatured: p.isFeatured,
+        soldBy: p.seller ? { id: String(p.seller), name: p.sellerName } : null,
         variants
     };
     if (!detail) return base;
@@ -64,6 +65,7 @@ const visibilityFilter = async () => {
     const [inactiveModules, hiddenCategories] = await Promise.all([inactiveModuleKeys(), hiddenCategoryIds()]);
     return {
         isActive: true,
+        sellerHidden: { $ne: true },
         ...(inactiveModules.length ? { module: { $nin: inactiveModules } } : {}),
         ...(hiddenCategories.length ? { categoryPath: { $nin: hiddenCategories } } : {})
     };
