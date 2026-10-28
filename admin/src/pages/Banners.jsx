@@ -15,6 +15,39 @@ const LINK_TYPES = [
     ['url', 'A web page (https)']
 ];
 
+/**
+ * Grabs a frame (about 1 s in) from an uploaded video as a JPEG, so a banner
+ * with only a video still gets the cover image the app shows while it loads.
+ * Uploads are same-origin, so the canvas can be read.
+ */
+const frameFromVideo = (url) =>
+    new Promise((resolve, reject) => {
+        const v = document.createElement('video');
+        v.muted = true;
+        v.playsInline = true;
+        v.preload = 'auto';
+        v.crossOrigin = 'anonymous';
+        v.addEventListener('loadeddata', () => {
+            v.currentTime = Math.min(1, (v.duration || 2) / 2);
+        });
+        v.addEventListener('seeked', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = v.videoWidth;
+            canvas.height = v.videoHeight;
+            canvas.getContext('2d').drawImage(v, 0, 0);
+            canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('No frame'))), 'image/jpeg', 0.9);
+        });
+        v.addEventListener('error', () => reject(new Error('Could not read the video')));
+        v.src = url;
+    });
+
+const uploadCover = async (videoUrl) => {
+    const form = new FormData();
+    form.append('file', await frameFromVideo(videoUrl), 'cover.jpg');
+    const res = await api.post('/uploads/image', form, { params: { folder: 'banners' } });
+    return res.data.data.url;
+};
+
 const liveState = (b) => {
     const now = Date.now();
     if (!b.isActive) return <Badge>Off</Badge>;
@@ -39,6 +72,19 @@ function BannerForm({ banner, placement, onDone }) {
         endsAt: toLocalInput(banner?.endsAt)
     });
     const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+    const [cover, setCover] = useState('');
+    // A video without a cover image gets one taken from the video itself.
+    const onVideo = async (video) => {
+        set({ video });
+        if (form.image) return;
+        setCover('Making a cover image from the video…');
+        try {
+            set({ image: await uploadCover(video) });
+            setCover('');
+        } catch {
+            setCover("Couldn't take a cover from the video. Upload an image above.");
+        }
+    };
     const save = useMutation({
         mutationFn: (body) => (banner ? api.patch(`/admin/banners/${banner._id}`, body) : api.post('/admin/banners', body)),
         onSuccess: () => {
@@ -80,9 +126,10 @@ function BannerForm({ banner, placement, onDone }) {
                 <p className="text-xs text-slate-500">MP4 or WebM, 2:1, a few seconds, up to 25 MB. It plays muted on a loop in place of the image.</p>
                 {form.video && <video src={form.video} poster={form.image || undefined} className="aspect-[2/1] w-full rounded-lg border object-cover" muted loop autoPlay playsInline />}
                 <div className="flex flex-wrap items-start gap-2">
-                    <ImageUpload kind="video" folder="banners" onUploaded={(video) => set({ video })} label={form.video ? 'Replace video' : 'Upload video'} />
+                    <ImageUpload kind="video" folder="banners" onUploaded={onVideo} label={form.video ? 'Replace video' : 'Upload video'} />
                     {form.video && <button type="button" className="btn-ghost text-red-600" onClick={() => set({ video: '' })}>Remove video</button>}
                 </div>
+                {cover && <p className="text-xs text-slate-600">{cover}</p>}
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -130,7 +177,8 @@ function BannerForm({ banner, placement, onDone }) {
                 <input type="checkbox" checked={form.isActive} onChange={(e) => set({ isActive: e.target.checked })} />
                 Active
             </label>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+                {!form.image && <p className="mr-auto text-sm text-amber-700">Add an image to save: it's the banner, or the cover for a video.</p>}
                 <button type="button" className="btn-ghost" onClick={onDone}>Cancel</button>
                 <button type="submit" className="btn-primary" disabled={save.isPending || !form.image}>{save.isPending ? 'Saving…' : 'Save'}</button>
             </div>
