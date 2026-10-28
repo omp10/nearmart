@@ -65,8 +65,15 @@ const encode = async (buffer, mimeType) => {
         const meta = await image.metadata();
         if (meta.format !== FORMAT_FOR_MIME[mimeType]) throw new ValidationError('File contents do not match its type');
         // Checked from the header before decoding anything.
-        if ((meta.width ?? 0) * (meta.pageHeight ?? meta.height ?? 0) * (meta.pages ?? 1) > MAX_INPUT_PIXELS) {
-            throw new ValidationError('Image dimensions are too large');
+        const frameW = meta.width ?? 0;
+        const frameH = meta.pageHeight ?? meta.height ?? 0;
+        if (frameW * frameH * (meta.pages ?? 1) > MAX_INPUT_PIXELS) {
+            // Every frame of a GIF is decoded, so big GIFs hit this long before their file size would.
+            throw new ValidationError(
+                animated
+                    ? `This GIF is too big to process (${frameW} × ${frameH}, ${meta.pages} frames). Make it 800 × 400 or shorter, or upload it as an MP4 video instead.`
+                    : 'Image dimensions are too large'
+            );
         }
 
         const pipeline = (animated ? image : image.rotate()).resize({ width: env.UPLOAD_WEBP_MAX_WIDTH, withoutEnlargement: true });
