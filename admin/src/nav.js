@@ -1,6 +1,6 @@
 import {
     BadgePercent, Bike, Boxes, CalendarClock, ChartColumn, FolderTree, LayoutDashboard, MapPinned, Megaphone,
-    Package, Settings, ShieldCheck, Shirt, ShoppingBag, Store, Users, Wallet, WashingMachine
+    Package, Settings, ShieldCheck, Shirt, ShoppingBag, Sparkles, Store, Users, Wallet, WashingMachine
 } from 'lucide-react';
 
 /** The Global view: things shared by every module (customers, settings, staff). */
@@ -66,6 +66,7 @@ export const NAV_GROUPS = [
         title: 'Marketing',
         items: [
             { to: '/banners', label: 'Banners', section: 'banners', icon: Megaphone, views: EVERYWHERE },
+            { to: '/offer-cards', label: 'Offer cards', section: 'banners', icon: Sparkles, views: MODULES },
             { to: '/coupons', label: 'Coupons', section: 'coupons', icon: BadgePercent, views: [GLOBAL, ...PRODUCT] }
         ]
     },
