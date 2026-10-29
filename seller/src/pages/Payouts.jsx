@@ -5,7 +5,7 @@ import { Printer } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
 import { formatDate } from '../lib/format.js';
-import { formatPaise } from '../lib/money.js';
+import { formatPaise, formatSignedPaise } from '../lib/money.js';
 import { PAYOUT_MODES, PAYOUT_STATUS } from '../components/money.jsx';
 import { Badge, ErrorNote, Loading, Notice, PageHeader, Pager } from '../components/ui.jsx';
 
@@ -22,7 +22,7 @@ export function Payouts() {
         <div className="space-y-5">
             <PageHeader title="Payouts" subtitle="Money Nearmart has sent, or is sending, to your bank account or UPI." />
             <Notice tone="blue">
-                Nearmart bundles your delivered orders into a payout once their hold period is over. Each payout has a statement listing its orders.
+                Nearmart bundles your delivered orders, and any credits or deductions to your balance, into a payout once their hold period is over. Each payout has a statement listing them.
                 See <Link to="/commission" className="font-medium underline">Commission</Link> for how it works.
             </Notice>
             <ErrorNote error={error} />
@@ -131,6 +131,8 @@ export function PayoutDetail() {
                     <Line label={`Item value (${p.orderCount} orders)`} value={formatPaise(p.grossPaise)} />
                     <Line label="Nearmart commission" value={`−${formatPaise(p.commissionPaise)}`} />
                     <Line label="Fixed fees" value={`−${formatPaise(p.feePaise)}`} />
+                    {p.sellerDiscountPaise > 0 && <Line label="Coupon discounts you funded" value={`−${formatPaise(p.sellerDiscountPaise)}`} />}
+                    {(p.adjustmentsPaise ?? 0) !== 0 && <Line label={`Adjustments (${p.adjustments?.length ?? 0})`} value={formatSignedPaise(p.adjustmentsPaise)} />}
                     <Line label="Amount to you" value={formatPaise(p.netPaise)} strong />
                 </section>
                 <section className="card space-y-1 text-sm">
@@ -146,8 +148,47 @@ export function PayoutDetail() {
                     {p.status === 'pending' && <p className="text-slate-600">Nearmart is sending this payment.</p>}
                     {p.status === 'cancelled' && <p className="text-slate-600">This payout was cancelled. Its orders go into your next payout.</p>}
                     {p.note && <p className="text-slate-600">Note: {p.note}</p>}
+                    {(p.bank?.accountNumber || p.bank?.upiId) && (
+                        <div className="mt-2 border-t border-slate-100 pt-2">
+                            <p className="text-xs font-medium text-slate-500">Paid to</p>
+                            {p.bank.accountNumber && <p className="tabular-nums">Bank account {p.bank.accountNumber}</p>}
+                            {p.bank.upiId && <p className="break-all">UPI {p.bank.upiId}</p>}
+                            <p className="text-xs text-slate-500">As on your store profile when this payout was made.</p>
+                        </div>
+                    )}
                 </section>
             </div>
+
+            {p.adjustments?.length > 0 && (
+                <section className="card overflow-x-auto p-0">
+                    <h2 className="px-4 pt-4 pb-2 font-semibold">Adjustments in this payout</h2>
+                    <table className="w-full min-w-[480px] text-sm">
+                        <thead className="text-left">
+                            <tr>
+                                <th className="px-4 py-3">Date</th>
+                                <th className="px-4 py-3">Reason</th>
+                                <th className="px-4 py-3 text-right">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {p.adjustments.map((a) => (
+                                <tr key={a._id} className="border-t border-slate-100">
+                                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDate(a.createdAt)}</td>
+                                    <td className="px-4 py-3">
+                                        {a.reason || (a.amountPaise < 0 ? 'Deduction' : 'Credit')}
+                                        {a.order && (
+                                            <Link to={`/orders/${a.order._id ?? a.order}`} className="block text-xs text-slate-500 hover:underline">
+                                                {a.order.orderNumber ? `Order #${a.order.orderNumber}` : 'See the order'}
+                                            </Link>
+                                        )}
+                                    </td>
+                                    <td className={`px-4 py-3 text-right font-semibold tabular-nums ${a.amountPaise < 0 ? 'text-red-700' : 'text-brand-700'}`}>{formatSignedPaise(a.amountPaise)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </section>
+            )}
 
             <section className="card overflow-x-auto p-0">
                 <h2 className="px-4 pt-4 pb-2 font-semibold">Orders in this payout</h2>
@@ -159,10 +200,14 @@ export function PayoutDetail() {
                             <th className="px-4 py-3 text-right">Item value</th>
                             <th className="px-4 py-3 text-right">Commission</th>
                             <th className="px-4 py-3 text-right">Fee</th>
+                            <th className="px-4 py-3 text-right" title="Coupon discounts funded by you">Your coupon</th>
                             <th className="px-4 py-3 text-right">You earn</th>
                         </tr>
                     </thead>
                     <tbody>
+                        {p.orders.length === 0 && (
+                            <tr><td colSpan={7} className="px-4 py-4 text-center text-slate-500">This payout has only adjustments.</td></tr>
+                        )}
                         {p.orders.map((o) => (
                             <tr key={o._id} className="border-t border-slate-100">
                                 <td className="px-4 py-3"><Link to={`/orders/${o._id}`} className="font-medium hover:underline">#{o.orderNumber}</Link></td>
@@ -170,6 +215,7 @@ export function PayoutDetail() {
                                 <td className="px-4 py-3 text-right tabular-nums">{formatPaise(o.grossPaise)}</td>
                                 <td className="px-4 py-3 text-right tabular-nums text-slate-600">−{formatPaise(o.commissionPaise)} <span className="text-xs text-slate-400">({o.commissionPercent}%)</span></td>
                                 <td className="px-4 py-3 text-right tabular-nums text-slate-600">{o.feePaise ? `−${formatPaise(o.feePaise)}` : '—'}</td>
+                                <td className="px-4 py-3 text-right tabular-nums text-slate-600">{o.sellerDiscountPaise ? `−${formatPaise(o.sellerDiscountPaise)}` : '—'}</td>
                                 <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatPaise(o.netPaise)}</td>
                             </tr>
                         ))}

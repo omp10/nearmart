@@ -12,7 +12,7 @@ function Example({ percent, fixedFeePaise }) {
     return (
         <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
             On {formatPaise(gross)} of items you earn <strong className="text-slate-900">{formatPaise(gross - commission - fee)}</strong>
-            {' '}({formatPaise(gross)} − {formatPaise(commission)} commission{fee > 0 ? ` − ${formatPaise(fee)} fee` : ''}).
+            {' '}({formatPaise(gross)} − {formatPaise(commission)} commission{fee > 0 ? ` − ${formatPaise(fee)} fee` : ''}, before any coupon you fund).
         </p>
     );
 }
@@ -32,7 +32,12 @@ export default function Commission() {
                 <ul className="list-inside list-disc space-y-1.5">
                     <li>You earn the <strong>value of the items</strong> you supply on each delivered order (the prices customers paid for them).</li>
                     <li>Nearmart keeps a <strong>commission</strong> (a percentage of the item value) and, in some shops, a small <strong>fixed fee</strong> per order.</li>
-                    <li>The <strong>delivery fee</strong> customers pay and any <strong>coupon discounts</strong> are Nearmart's. They never reduce your earnings.</li>
+                    <li>The <strong>delivery fee</strong> customers pay is Nearmart's.</li>
+                    <li>
+                        <strong>Coupon discounts</strong> are paid by Nearmart and never reduce your earnings, unless a coupon is marked as <strong>funded by you</strong>.
+                        Then its discount comes out of what you earn on that order, shown as "Your coupon" on your earnings and payout statements.
+                    </li>
+                    <li>Nearmart may <strong>credit or deduct</strong> an amount from your balance (for example for a damaged item). These show under Adjustments on the Earnings page and go into your next payout.</li>
                     <li>Items you mark unavailable are not counted. Cancelled orders earn nothing.</li>
                     <li>The rate is fixed when the order is placed, so a later change never affects past orders.</li>
                 </ul>

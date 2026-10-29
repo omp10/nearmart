@@ -20,7 +20,7 @@ import { releaseSlot, reserveSlot } from '../slots/slot.service.js';
 import { User } from '../users/user.model.js';
 import { zoneForAddress } from '../zones/zone.service.js';
 import { Seller } from '../sellers/seller.model.js';
-import { commissionFor, getConfig } from '../sellers/seller.service.js';
+import { commissionFor, getConfig, isTrading } from '../sellers/seller.service.js';
 import { CANCELLABLE_BY_CUSTOMER, CANCELLABLE_BY_STAFF, CUSTOMER_MESSAGES, ITEM_EDITABLE, STATUS_LABELS, canMove } from './order.flow.js';
 import { Order } from './order.model.js';
 import { priceLines } from './pricing.service.js';
@@ -106,8 +106,8 @@ export const quote = async (userId, { module, addressId, couponCode, sellerId })
     if (!lines.length) throw new ValidationError('Your cart has no items from this store');
     let seller = null;
     if (wanted) {
-        seller = await Seller.findById(wanted).select('businessName status isOpen isActive zones commission modules').lean();
-        if (!seller || seller.status !== 'approved' || !seller.isOpen || !seller.isActive) throw new ConflictError('This store is not taking orders right now');
+        seller = await Seller.findById(wanted).select('businessName status isOpen isActive zones commission modules hours holidays').lean();
+        if (!seller || !isTrading(seller)) throw new ConflictError('This store is closed right now. Try again during its opening hours.');
         if (seller.zones?.length && !seller.zones.some((z) => String(z) === String(zone._id))) {
             throw new ValidationError(`${seller.businessName} does not deliver to this address`);
         }
@@ -120,21 +120,42 @@ export const quote = async (userId, { module, addressId, couponCode, sellerId })
     }
 
     const subtotalPaise = lines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
-    if (zone.minOrderPaise && subtotalPaise < zone.minOrderPaise) {
+    const trip = await sameTripOrder(userId, module, address);
+    if (!trip && zone.minOrderPaise && subtotalPaise < zone.minOrderPaise) {
         throw new ValidationError(`The minimum order here is ₹${zone.minOrderPaise / 100}`);
     }
 
     let coupon = null;
     if (couponCode) {
         const hasPreviousOrders = Boolean(await Order.exists({ user: userId, status: { $ne: 'cancelled' } }));
-        ({ coupon } = await evaluateCoupon(couponCode, { userId, module, subtotalPaise, hasPreviousOrders }));
+        ({ coupon } = await evaluateCoupon(couponCode, { userId, module, subtotalPaise, hasPreviousOrders, sellerId: wanted }));
     }
 
     const slotRequired = Boolean(
         await SlotRule.exists({ module, kind: 'delivery', isActive: true, zone: { $in: [null, zone._id] } })
     );
-    return { address, zone, lines, coupon, slotRequired, seller, pricing: priceLines(lines, { zone, coupon }) };
+    const pricing = priceLines(lines, { zone, coupon, ...(trip ? { fixedDeliveryFeePaise: 0 } : {}) });
+    return { address, zone, lines, coupon, slotRequired, seller, trip: trip ? { withOrder: trip.orderNumber } : null, pricing };
 };
+
+/** A second store's order counts as the same trip if it goes to the same address this soon after the first. */
+export const TRIP_WINDOW_MINUTES = 30;
+
+/**
+ * The customer's recent order in this shop to the same address, if any:
+ * this checkout then rides along on that delivery (no fee, no minimum).
+ */
+const sameTripOrder = (userId, module, address) =>
+    Order.findOne({
+        user: userId,
+        module,
+        status: { $in: ['placed', 'accepted', 'packing', 'ready'] },
+        createdAt: { $gte: new Date(Date.now() - TRIP_WINDOW_MINUTES * 60_000) },
+        'address.line1': address.line1,
+        'address.pincode': address.pincode
+    })
+        .select('orderNumber')
+        .lean();
 
 /** Unpaid orders and open orders one customer may hold at a time. */
 export const MAX_UNPAID_ORDERS = 3;
@@ -229,7 +250,7 @@ export const placeOrder = async (userId, { module, addressId, slotId, couponCode
             slot: slot ? { id: slot.id, date: slot.date, start: slot.start, end: slot.end, label: slot.label } : undefined,
             pricing,
             originalTotalPaise: pricing.totalPaise,
-            coupon: coupon ? { code: coupon.code, discountPaise: pricing.discountPaise, coupon: coupon._id } : undefined,
+            coupon: coupon ? { code: coupon.code, discountPaise: pricing.discountPaise, coupon: coupon._id, fundedBy: coupon.fundedBy ?? 'platform' } : undefined,
             payment: { method: paymentMethod, status: 'pending' },
             status,
             statusHistory: [{ status, by: actor }],
@@ -423,6 +444,37 @@ export const retryRefund = async (orderId, { allowedModules }) => {
     if (missing <= 0) throw new ValidationError('Every refund for this order has already been requested');
     await initiateRefund(payment._id, missing, `Retry for ${order.orderNumber}`);
     return Order.findById(order._id).lean();
+};
+
+/**
+ * Alerts staff (and nudges the seller) once when a marketplace order has sat
+ * unaccepted longer than the configured minutes. Nothing is cancelled: the
+ * store decides what to do.
+ */
+export const alertLateSellerOrders = async (now = new Date()) => {
+    const { acceptAlertMinutes } = await getConfig();
+    const cutoff = new Date(now.getTime() - acceptAlertMinutes * 60_000);
+    const late = await Order.find({ 'seller.id': { $ne: null }, status: 'placed', sellerAlertedAt: null, updatedAt: { $lte: cutoff } })
+        .select('orderNumber module seller statusHistory')
+        .lean();
+    let sent = 0;
+    for (const o of late) {
+        const placedAt = [...o.statusHistory].reverse().find((h) => h.status === 'placed')?.at ?? o.updatedAt;
+        if (placedAt > cutoff) continue;
+        const claimed = await Order.updateOne({ _id: o._id, sellerAlertedAt: null }, { $set: { sellerAlertedAt: now } });
+        if (!claimed.modifiedCount) continue;
+        const minutes = Math.round((now - placedAt) / 60_000);
+        notifyStaff(
+            { module: o.module, section: 'orders' },
+            { title: `${o.seller.name} hasn't accepted #${o.orderNumber}`, body: `Waiting ${minutes} min. Call the store or cancel and refund the customer.`, type: 'staff.order.seller_late', data: { orderId: String(o._id) } }
+        );
+        notify(
+            { ownerKind: 'seller', ownerId: o.seller.id },
+            { title: `Order #${o.orderNumber} is waiting`, body: `Please accept it now. It was placed ${minutes} min ago.`, type: 'seller.order.reminder', data: { orderId: String(o._id) } }
+        ).catch(() => {});
+        sent += 1;
+    }
+    return sent;
 };
 
 /** Cancels online orders whose payment never arrived, releasing their stock and slot. */

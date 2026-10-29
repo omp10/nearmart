@@ -23,6 +23,7 @@ const Payouts = lazy(() => import('./pages/Payouts.jsx').then((m) => ({ default:
 const PayoutDetail = lazy(() => import('./pages/Payouts.jsx').then((m) => ({ default: m.PayoutDetail })));
 const Commission = lazy(() => import('./pages/Commission.jsx'));
 const StoreProfile = lazy(() => import('./pages/Store.jsx').then((m) => ({ default: m.StoreProfile })));
+const OpeningHours = lazy(() => import('./pages/OpeningHours.jsx'));
 const Shops = lazy(() => import('./pages/Store.jsx').then((m) => ({ default: m.Shops })));
 const Notifications = lazy(() => import('./pages/Account.jsx').then((m) => ({ default: m.Notifications })));
 const Documents = lazy(() => import('./pages/Account.jsx').then((m) => ({ default: m.Documents })));
@@ -58,16 +59,23 @@ function NotFound() {
     );
 }
 
-/** Selling pages need an approved store; while paused they explain why instead of failing. */
-function SellingOnly() {
+/**
+ * Catalogue pages need an approved store; while paused they explain why instead
+ * of failing. Orders and money stay open to paused stores (the API allows it),
+ * so orders already received can still be finished.
+ */
+function CatalogueOnly() {
     const { seller } = useAuth();
     if (seller.status === 'approved') return <Outlet />;
     return (
         <div className="card flex flex-col items-center gap-3 py-10 text-center">
             <PauseCircle className="h-10 w-10 text-red-500" aria-hidden="true" />
             <h1 className="text-xl font-semibold">This page is unavailable while your store is paused</h1>
-            <p className="max-w-md text-sm text-slate-600">Orders, products and money pages open again once Nearmart resumes your store.</p>
-            <Link to="/store" className="btn-outline">Store profile</Link>
+            <p className="max-w-md text-sm text-slate-600">Products and stock open again once Nearmart resumes your store. You can still finish the orders you've already received.</p>
+            <div className="flex flex-wrap justify-center gap-2">
+                <Link to="/orders" className="btn-primary">Go to orders</Link>
+                <Link to="/store" className="btn-outline">Store profile</Link>
+            </div>
         </div>
     );
 }
@@ -105,20 +113,21 @@ function SellerApp() {
         <Routes>
             <Route element={<AppLayout />}>
                 <Route element={<PageSuspense />}>
-                    <Route element={<SellingOnly />}>
-                        <Route index element={<Dashboard />} />
-                        <Route path="orders" element={<Orders />} />
-                        <Route path="orders/:id" element={<OrderDetail />} />
+                    <Route index element={<Dashboard />} />
+                    <Route path="orders" element={<Orders />} />
+                    <Route path="orders/:id" element={<OrderDetail />} />
+                    <Route element={<CatalogueOnly />}>
                         <Route path="products" element={<Products />} />
                         <Route path="products/new" element={<ProductEditor key="new" />} />
                         <Route path="products/:id" element={<ProductEditor key="edit" />} />
                         <Route path="inventory" element={<Inventory />} />
-                        <Route path="earnings" element={<Earnings />} />
-                        <Route path="payouts" element={<Payouts />} />
-                        <Route path="payouts/:id" element={<PayoutDetail />} />
-                        <Route path="commission" element={<Commission />} />
                     </Route>
+                    <Route path="earnings" element={<Earnings />} />
+                    <Route path="payouts" element={<Payouts />} />
+                    <Route path="payouts/:id" element={<PayoutDetail />} />
+                    <Route path="commission" element={<Commission />} />
                     <Route path="store" element={<StoreProfile />} />
+                    <Route path="store/hours" element={<OpeningHours />} />
                     <Route path="shops" element={<Shops />} />
                     <Route path="notifications" element={<Notifications />} />
                     <Route path="documents" element={<Documents />} />

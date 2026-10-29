@@ -1,26 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation } from 'react-router';
-import { ChevronDown, KeyRound, LogOut, Menu, PauseCircle, X } from 'lucide-react';
+import { ChevronDown, KeyRound, Lock, LogOut, Menu, PauseCircle, X } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider.jsx';
-import { api } from '../lib/api.js';
 import { NAV_GROUPS } from '../nav.js';
 import { BrandMark } from './Brand.jsx';
 import NotificationBell, { useInbox } from './NotificationBell.jsx';
+import { OrderAlertsPrompt, OrderAlertsToggle, useNewOrders, useOrderAlerts } from './OrderAlerts.jsx';
 
-/** New orders waiting to be accepted, for the sidebar badge. */
-function useNewOrderCount(enabled) {
-    const { data } = useQuery({
-        queryKey: ['orders', 'new-count'],
-        queryFn: () => api.get('/seller/orders', { params: { status: 'placed', limit: 1 } }).then((r) => r.data.data.total),
-        refetchInterval: 30_000,
-        enabled
-    });
-    return data ?? 0;
-}
+/** Approved and paused stores both finish their orders and see their money. */
+export const isTrading = (seller) => seller?.status === 'approved' || seller?.status === 'suspended';
 
 function StoreStatePill({ seller }) {
     if (seller.status === 'suspended') return <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">Paused by Nearmart</span>;
+    if (seller.isOpen && seller.tradingNow === false) {
+        return <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">● Outside opening hours</span>;
+    }
     return seller.isOpen ? (
         <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">● Open for orders</span>
     ) : (
@@ -30,10 +24,9 @@ function StoreStatePill({ seller }) {
 
 function Sidebar({ onNavigate, onClose }) {
     const { seller } = useAuth();
-    const approved = seller.status === 'approved';
-    const newOrders = useNewOrderCount(approved);
+    const { data: newOrders } = useNewOrders(isTrading(seller));
     const { data: inbox } = useInbox();
-    const badges = { orders: newOrders, notifications: inbox?.unread ?? 0 };
+    const badges = { orders: newOrders?.total ?? 0, notifications: inbox?.unread ?? 0 };
 
     return (
         <div className="flex h-full flex-col">
@@ -69,7 +62,7 @@ function Sidebar({ onNavigate, onClose }) {
                                     <NavLink
                                         key={item.to}
                                         to={item.to}
-                                        end={item.to === '/'}
+                                        end={item.to === '/' || item.end}
                                         onClick={onNavigate}
                                         className={({ isActive }) =>
                                             `flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
@@ -79,6 +72,7 @@ function Sidebar({ onNavigate, onClose }) {
                                     >
                                         <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden="true" />
                                         <span className="flex-1 truncate">{item.label}</span>
+                                        {item.catalogue && seller.status === 'suspended' && <Lock className="h-3.5 w-3.5 shrink-0 opacity-60" aria-label="Locked while paused" />}
                                         {count > 0 && (
                                             <span className="min-w-5 rounded-full bg-red-600 px-1.5 text-center text-[11px] font-semibold leading-5 text-white" aria-label={`${count} new`}>
                                                 {count > 99 ? '99+' : count}
@@ -147,14 +141,17 @@ export function SuspendedBanner({ seller }) {
             <div>
                 <p className="font-semibold">Your store is paused by Nearmart</p>
                 <p className="mt-0.5">{seller.rejectionReason || 'Customers cannot see your products right now.'}</p>
-                <p className="mt-1 text-xs text-red-700">You can still update your store profile and documents. Please contact Nearmart support to resume selling.</p>
+                <p className="mt-1 text-xs text-red-700">
+                    You can still accept, pack and hand over orders you've already received, see your earnings and payouts, and update your store profile and documents.
+                    Products and stock are locked until Nearmart resumes your store. Please contact Nearmart support to resume selling.
+                </p>
             </div>
         </div>
     );
 }
 
 /** Header used by every signed-in screen: menu button (phones), title, bell, account. */
-export function TopBar({ onMenu, children }) {
+export function TopBar({ onMenu, actions, children }) {
     return (
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-neutral-200 bg-white/90 px-4 backdrop-blur lg:h-[72px] lg:px-8">
             {onMenu && (
@@ -164,6 +161,7 @@ export function TopBar({ onMenu, children }) {
             )}
             <div className="flex min-w-0 flex-1 items-center">{children}</div>
             <div className="flex items-center gap-2 sm:gap-3">
+                {actions}
                 <NotificationBell />
                 <div className="hidden h-8 w-px bg-neutral-200 sm:block" aria-hidden="true" />
                 <ProfileMenu />
@@ -176,6 +174,8 @@ export default function AppLayout() {
     const { seller } = useAuth();
     const [menuOpen, setMenuOpen] = useState(false);
     const location = useLocation();
+    const trading = isTrading(seller);
+    useOrderAlerts(trading);
 
     // Close the drawer on navigation (e.g. from a notification) and on Esc.
     useEffect(() => setMenuOpen(false), [location.pathname]);
@@ -206,11 +206,12 @@ export default function AppLayout() {
             )}
 
             <div className="flex min-w-0 flex-col">
-                <TopBar onMenu={() => setMenuOpen(true)}>
+                <TopBar onMenu={() => setMenuOpen(true)} actions={trading && <OrderAlertsToggle />}>
                     <p className="truncate text-sm font-semibold text-neutral-900 lg:hidden">{seller.businessName}</p>
                 </TopBar>
                 <main className="flex-1 space-y-6 p-4 lg:p-8">
                     {seller.status === 'suspended' && <SuspendedBanner seller={seller} />}
+                    {trading && <OrderAlertsPrompt />}
                     <Outlet />
                 </main>
             </div>

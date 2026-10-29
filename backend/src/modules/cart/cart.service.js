@@ -35,7 +35,7 @@ export const resolveLines = async (items) => {
         const base = { productId: String(item.product), variantId: String(item.variant), qty: item.qty };
 
         const unavailable =
-            !product || !variant || !product.isActive || !variant.isActive || product.sellerHidden ||
+            !product || !variant || !product.isActive || !variant.isActive || product.sellerHidden || ['pending', 'rejected'].includes(product.review?.status) ||
             inactiveModules.includes(product.module) || product.categoryPath.some((c) => hidden.has(String(c)));
         if (unavailable) return { ...base, module: product?.module ?? null, name: product?.name ?? 'Unavailable item', issue: 'unavailable' };
 

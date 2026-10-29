@@ -181,7 +181,7 @@ export const listProducts = async ({ q, module, category, status, stock, page, l
     };
     const [items, total] = await Promise.all([
         Product.find(filter)
-            .select('module category name slug brand images isActive isFeatured minPricePaise totalStock inStock variants createdAt seller sellerName sellerHidden')
+            .select('module category name slug brand images isActive isFeatured minPricePaise totalStock inStock variants createdAt seller sellerName sellerHidden review')
             .populate('category', 'name')
             .sort(sorts[sort] || sorts.newest)
             .skip((page - 1) * limit)

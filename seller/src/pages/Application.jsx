@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Check, CheckCircle2, Clock, PartyPopper, RefreshCw } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider.jsx';
-import { api } from '../lib/api.js';
+import { api, fieldErrors } from '../lib/api.js';
 import { formatDateTime } from '../lib/format.js';
 import { MODULE_STATUS, documentLabel, missingForSubmit, shopLabel } from '../lib/shops.js';
 import { TopBar } from '../layout/AppLayout.jsx';
@@ -30,6 +30,9 @@ const STEPS = [
     { key: 'bank', title: 'Bank', done: (s) => Boolean((s.bank?.accountNumber && s.bank?.ifsc) || s.bank?.upiId) },
     { key: 'review', title: 'Review & submit', done: () => false }
 ];
+
+const TAX_STEP = STEPS.findIndex((s) => s.key === 'tax');
+const BANK_STEP = STEPS.findIndex((s) => s.key === 'bank');
 
 function Stepper({ seller, current, onPick }) {
     const listRef = useRef(null);
@@ -163,6 +166,8 @@ function ReviewStep({ seller, onEdit }) {
         mutationFn: () => api.post('/seller/application/submit').then((r) => r.data.data),
         onSuccess: setSeller
     });
+    // PAN, GSTIN, FSSAI and IFSC format problems come back as field details.
+    const kycErrors = Object.entries(fieldErrors(submit.error)).filter(([path]) => path.startsWith('legal.') || path.startsWith('bank.'));
 
     return (
         <div className="space-y-5">
@@ -178,7 +183,22 @@ function ReviewStep({ seller, onEdit }) {
                     Check the details above, then send your application. Nearmart usually reviews it within 2 working days.
                 </Notice>
             )}
-            <ErrorNote error={submit.error} />
+            {kycErrors.length > 0 ? (
+                <Notice tone="red" icon={AlertTriangle} title="Some details need fixing before you can submit">
+                    <ul className="mt-1 space-y-1">
+                        {kycErrors.map(([path, message]) => (
+                            <li key={path} className="flex flex-wrap items-center gap-x-2">
+                                <span>{message}</span>
+                                <button type="button" className="font-medium underline" onClick={() => onEdit(path.startsWith('bank.') ? BANK_STEP : TAX_STEP)}>
+                                    Fix {path.startsWith('bank.') ? 'bank details' : 'tax details'}
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                </Notice>
+            ) : (
+                <ErrorNote error={submit.error} />
+            )}
             <div className="flex justify-end">
                 <button type="button" className="btn-primary px-6 py-2.5" onClick={() => submit.mutate()} disabled={submit.isPending}>
                     {submit.isPending ? 'Sending…' : seller.status === 'rejected' ? 'Send application again' : 'Submit application'}

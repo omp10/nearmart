@@ -13,12 +13,14 @@ export const discountFor = (coupon, subtotalPaise) => {
  * Checks a code for this customer, module and subtotal and returns the
  * coupon with its discount. Every rejection says why, for the app to show.
  */
-export const evaluateCoupon = async (code, { userId, module, subtotalPaise, hasPreviousOrders, now = new Date() }) => {
+export const evaluateCoupon = async (code, { userId, module, subtotalPaise, hasPreviousOrders, sellerId = null, now = new Date() }) => {
     const coupon = await Coupon.findOne({ code: String(code).trim().toUpperCase() }).lean();
     if (!coupon || !coupon.isActive) throw new ValidationError('This coupon code is not valid');
     if (coupon.validFrom && now < coupon.validFrom) throw new ValidationError('This coupon is not active yet');
     if (coupon.validTo && now > coupon.validTo) throw new ValidationError('This coupon has expired');
     if (coupon.modules.length && !coupon.modules.includes(module)) throw new ValidationError('This coupon does not apply to these items');
+    // A store's own coupon works only on that store's items.
+    if (coupon.seller && String(coupon.seller) !== String(sellerId ?? '')) throw new ValidationError('This coupon is for another store');
     if (coupon.usageLimit != null && coupon.usedCount >= coupon.usageLimit) throw new ValidationError('This coupon has been fully used');
     if (coupon.firstOrderOnly && hasPreviousOrders) throw new ValidationError('This coupon is for your first order only');
     if (subtotalPaise < coupon.minOrderPaise) {

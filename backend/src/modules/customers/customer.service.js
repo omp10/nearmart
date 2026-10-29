@@ -27,8 +27,8 @@ const withServiceability = (addresses) =>
     Promise.all(
         addresses.map(async (a) => {
             const [lng, lat] = a.location?.coordinates ?? [];
-            const { modules } = await checkServiceability({ pincode: a.pincode, lat, lng });
-            return { ...a, serviceableModules: modules };
+            const { modules, zoneByModule } = await checkServiceability({ pincode: a.pincode, lat, lng });
+            return { ...a, serviceableModules: modules, zones: Object.fromEntries(Object.entries(zoneByModule ?? {}).map(([m, z]) => [m, String(z._id)])) };
         })
     );
 

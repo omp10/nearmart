@@ -1,33 +1,35 @@
 import {
-    Bell, Boxes, FileText, HandCoins, KeyRound, LayoutDashboard, Package, Percent, ShoppingBag, Store, Tags, Wallet
+    Bell, Boxes, Clock, FileText, HandCoins, KeyRound, LayoutDashboard, Package, Percent, ShoppingBag, Store, Tags, Wallet
 } from 'lucide-react';
 
 /**
- * Sidebar entries, grouped under section headings. `selling` marks pages that
- * need an approved store; while the store is paused they show a notice.
+ * Sidebar entries, grouped under section headings. `catalogue` marks pages
+ * that need an approved store; while the store is paused they show a notice.
+ * Orders and money stay open to paused stores so they can finish their orders.
  */
 export const NAV_GROUPS = [
-    { title: 'Home', items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, selling: true }] },
-    { title: 'Orders', items: [{ to: '/orders', label: 'Orders', icon: ShoppingBag, selling: true, badge: 'orders' }] },
+    { title: 'Home', items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard }] },
+    { title: 'Orders', items: [{ to: '/orders', label: 'Orders', icon: ShoppingBag, badge: 'orders' }] },
     {
         title: 'Catalogue',
         items: [
-            { to: '/products', label: 'Products', icon: Package, selling: true },
-            { to: '/inventory', label: 'Inventory', icon: Boxes, selling: true }
+            { to: '/products', label: 'Products', icon: Package, catalogue: true },
+            { to: '/inventory', label: 'Inventory', icon: Boxes, catalogue: true }
         ]
     },
     {
         title: 'Money',
         items: [
-            { to: '/earnings', label: 'Earnings', icon: Wallet, selling: true },
-            { to: '/payouts', label: 'Payouts', icon: HandCoins, selling: true },
-            { to: '/commission', label: 'Commission', icon: Percent, selling: true }
+            { to: '/earnings', label: 'Earnings', icon: Wallet },
+            { to: '/payouts', label: 'Payouts', icon: HandCoins },
+            { to: '/commission', label: 'Commission', icon: Percent }
         ]
     },
     {
         title: 'Store',
         items: [
-            { to: '/store', label: 'Store profile', icon: Store },
+            { to: '/store', label: 'Store profile', icon: Store, end: true },
+            { to: '/store/hours', label: 'Opening hours', icon: Clock },
             { to: '/shops', label: 'Shops & categories', icon: Tags }
         ]
     },

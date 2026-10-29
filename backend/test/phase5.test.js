@@ -118,7 +118,8 @@ describe('dashboard', () => {
         await order(1);
         const res = await api().get('/api/v1/admin/dashboard').set(as(admin));
         const d = res.body.data;
-        expect(d.today).toMatchObject({ date: istDate(), orders: 2, revenuePaise: 12000 + 7000 });
+        // The second order goes to the same address within the trip window, so its ₹20 delivery is free.
+        expect(d.today).toMatchObject({ date: istDate(), orders: 2, revenuePaise: 12000 + 5000 });
         expect(d.week.daily).toHaveLength(7);
         expect(d.week.byModule.find((m) => m.module === 'grocery').orders).toBe(2);
         expect(d.openOrders).toMatchObject({ total: 2, needsAction: 2 });

@@ -15,6 +15,8 @@ const fields = {
     maxDiscountPaise: paise.nullable().optional(),
     minOrderPaise: paise.optional(),
     modules: z.array(z.enum(BUSINESS_MODULES)).optional(),
+    seller: z.string().regex(/^[a-f0-9]{24}$/i, 'Invalid seller').nullable().optional(),
+    fundedBy: z.enum(['platform', 'seller']).optional(),
     validFrom: z.coerce.date().nullable().optional(),
     validTo: z.coerce.date().nullable().optional(),
     usageLimit: z.number().int().min(1).nullable().optional(),
@@ -31,7 +33,7 @@ router.get('/', requirePermission('coupons', 'view'), async (_req, res) => {
     ok(res, await coupons.listCoupons());
 });
 
-router.post('/', requirePermission('coupons', 'create'), validate(z.object(fields)), async (req, res) => {
+router.post('/', requirePermission('coupons', 'create'), validate(z.object(fields).refine((c) => c.fundedBy !== 'seller' || c.seller, { message: 'A seller-funded coupon must be limited to that seller', path: ['seller'] })), async (req, res) => {
     created(res, await coupons.createCoupon(req.body), 'Coupon created');
 });
 

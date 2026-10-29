@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
-import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 import { escapeRegex } from '../../lib/pagination.js';
+import { addDays, istDate, weekday } from '../../lib/istTime.js';
 import { Category } from '../catalog/category.model.js';
 import { PRODUCT_MODULES } from '../catalog/module.model.js';
 import { Product } from '../catalog/product.model.js';
@@ -16,25 +17,68 @@ export const DEFAULT_COMMISSION = Object.freeze({ percent: 10, fixedFeePaise: 0 
 export const getConfig = async () => {
     const doc = await MarketplaceConfig.findOneAndUpdate({ key: 'marketplace' }, { $setOnInsert: { key: 'marketplace' } }, { upsert: true, new: true }).lean();
     const commission = Object.fromEntries(PRODUCT_MODULES.map((m) => [m, { ...DEFAULT_COMMISSION, ...(doc.commission?.[m] ?? {}) }]));
-    return { commission, payoutHoldDays: doc.payoutHoldDays ?? 3 };
+    return { commission, payoutHoldDays: doc.payoutHoldDays ?? 3, acceptAlertMinutes: doc.acceptAlertMinutes ?? 10, reviewNewProducts: Boolean(doc.reviewNewProducts) };
 };
 
-export const updateConfig = async ({ commission, payoutHoldDays }) => {
+export const updateConfig = async ({ commission, payoutHoldDays, acceptAlertMinutes, reviewNewProducts }) => {
     const set = {};
     for (const [module, value] of Object.entries(commission ?? {})) {
         if (value.percent != null) set[`commission.${module}.percent`] = value.percent;
         if (value.fixedFeePaise != null) set[`commission.${module}.fixedFeePaise`] = value.fixedFeePaise;
     }
     if (payoutHoldDays != null) set.payoutHoldDays = payoutHoldDays;
+    if (acceptAlertMinutes != null) set.acceptAlertMinutes = acceptAlertMinutes;
+    if (reviewNewProducts != null) set.reviewNewProducts = reviewNewProducts;
     await MarketplaceConfig.updateOne({ key: 'marketplace' }, { $set: set }, { upsert: true });
     return getConfig();
 };
 
-/** The rate a seller pays on one module's orders: their own override, else the module default. */
-export const commissionFor = (seller, module, config) => ({
-    percent: seller.commission?.percent ?? config.commission[module]?.percent ?? DEFAULT_COMMISSION.percent,
-    fixedFeePaise: seller.commission?.fixedFeePaise ?? config.commission[module]?.fixedFeePaise ?? DEFAULT_COMMISSION.fixedFeePaise
-});
+/**
+ * The rate a seller pays on one module's orders: their override for that
+ * shop, else their seller-wide override, else the shop's default.
+ */
+export const commissionFor = (seller, module, config) => {
+    const byModule = seller.commission?.byModule;
+    const own = (byModule instanceof Map ? byModule.get(module) : byModule?.[module]) ?? {};
+    return {
+        percent: own.percent ?? seller.commission?.percent ?? config.commission[module]?.percent ?? DEFAULT_COMMISSION.percent,
+        fixedFeePaise: own.fixedFeePaise ?? seller.commission?.fixedFeePaise ?? config.commission[module]?.fixedFeePaise ?? DEFAULT_COMMISSION.fixedFeePaise
+    };
+};
+
+// ─── Opening hours ───
+
+const minutesOf = (hhmm) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    return h * 60 + m;
+};
+
+/** Whether the seller's weekly hours and holidays have the store open at `now` (no hours set = always). */
+export const withinHours = (seller, now = new Date()) => {
+    const today = istDate(now);
+    if ((seller.holidays ?? []).includes(today)) return false;
+    if (!seller.hours?.length) return true;
+    const ist = new Date(now.getTime() + 330 * 60_000);
+    const minute = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+    const todayDay = weekday(today);
+    const yesterday = addDays(today, -1);
+    const yesterdayDay = weekday(yesterday);
+    return seller.hours.some((h) => {
+        const open = minutesOf(h.open);
+        const close = minutesOf(h.close);
+        // Same open and close: open all day.
+        if (open === close) return h.day === todayDay;
+        if (close > open) return h.day === todayDay && minute >= open && minute < close;
+        // Past midnight (e.g. 18:00–02:00): the evening part belongs to the day it opens,
+        // the early-morning part to that day too, unless that day was a holiday.
+        if (h.day === todayDay && minute >= open) return true;
+        return h.day === yesterdayDay && minute < close && !(seller.holidays ?? []).includes(yesterday);
+    });
+};
+
+/** Open for orders right now: approved, login on, the manual switch on, and inside its hours. */
+export const isTrading = (seller, now = new Date()) =>
+    seller.status === 'approved' && seller.isActive && seller.isOpen && withinHours(seller, now);
 
 // ─── Shapes ───
 
@@ -42,7 +86,7 @@ export const commissionFor = (seller, module, config) => ({
 export const sellerProfile = (s) => {
     const doc = typeof s.toObject === 'function' ? s.toObject() : s;
     const { password, failedLogins, lockedUntil, tokenVersion, __v, ...rest } = doc;
-    return { ...rest, id: String(doc._id) };
+    return { ...rest, id: String(doc._id), tradingNow: isTrading(doc) };
 };
 
 const findSeller = async (id) => {
@@ -68,12 +112,81 @@ const alertAdmins = (title, body, type, sellerId) =>
 export const syncVisibility = async (sellerOrId) => {
     const seller = sellerOrId instanceof Seller ? sellerOrId : await Seller.findById(sellerOrId);
     if (!seller) return;
-    const live = seller.status === 'approved' && seller.isActive && seller.isOpen;
+    const live = isTrading(seller);
     const modules = live ? seller.approvedModules() : [];
-    await Product.updateMany({ seller: seller._id, module: { $nin: modules } }, { $set: { sellerHidden: true } });
+    const zones = seller.zones ?? [];
+    await Product.updateMany({ seller: seller._id, module: { $nin: modules } }, { $set: { sellerHidden: true, sellerZones: zones } });
     if (modules.length) {
-        await Product.updateMany({ seller: seller._id, module: { $in: modules } }, { $set: { sellerHidden: false, sellerName: seller.businessName } });
+        await Product.updateMany({ seller: seller._id, module: { $in: modules } }, { $set: { sellerHidden: false, sellerName: seller.businessName, sellerZones: zones } });
     }
+};
+
+/**
+ * Opens and closes stores on their schedule. Runs every minute; only stores
+ * whose hours just flipped are touched.
+ */
+export const refreshSchedules = async (now = new Date()) => {
+    const sellers = await Seller.find({ status: 'approved', $or: [{ 'hours.0': { $exists: true } }, { 'holidays.0': { $exists: true } }, { scheduleOpen: false }] });
+    let changed = 0;
+    for (const seller of sellers) {
+        const open = withinHours(seller, now);
+        if (open === seller.scheduleOpen) continue;
+        seller.scheduleOpen = open;
+        await seller.save();
+        await syncVisibility(seller);
+        changed += 1;
+    }
+    return changed;
+};
+
+/** Seller sets their weekly hours and holidays. */
+export const setHours = async (sellerId, { hours, holidays }) => {
+    const seller = await findSeller(sellerId);
+    if (hours) seller.hours = hours;
+    if (holidays) seller.holidays = [...new Set(holidays)].sort();
+    seller.scheduleOpen = withinHours(seller);
+    await seller.save();
+    await syncVisibility(seller);
+    return sellerProfile(seller);
+};
+
+// ─── KYC formats ───
+
+const PAN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+const FSSAI = /^[0-9]{14}$/;
+const IFSC = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+
+/** GSTIN check character (mod-36 Luhn variant used by GSTN). */
+const gstinChecksumOk = (gstin) => {
+    const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let sum = 0;
+    for (let i = 0; i < 14; i += 1) {
+        const product = chars.indexOf(gstin[i]) * (i % 2 === 0 ? 1 : 2);
+        sum += Math.floor(product / 36) + (product % 36);
+    }
+    return chars[(36 - (sum % 36)) % 36] === gstin[14];
+};
+
+/** Format problems in the tax and bank details, as field → message. */
+export const kycProblems = ({ legal = {}, bank = {} } = {}) => {
+    const out = {};
+    const pan = (legal.pan ?? '').toUpperCase();
+    const gstin = (legal.gstin ?? '').toUpperCase();
+    if (pan && !PAN.test(pan)) out['legal.pan'] = 'PAN looks wrong: 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F)';
+    if (gstin) {
+        if (!GSTIN.test(gstin) || !gstinChecksumOk(gstin)) out['legal.gstin'] = 'GSTIN looks wrong: check all 15 characters';
+        else if (pan && gstin.slice(2, 12) !== pan) out['legal.gstin'] = "GSTIN doesn't match the PAN";
+    }
+    if (legal.fssai && !FSSAI.test(legal.fssai)) out['legal.fssai'] = 'FSSAI licence numbers are 14 digits';
+    if (bank.ifsc && !IFSC.test(String(bank.ifsc).toUpperCase())) out['bank.ifsc'] = 'IFSC looks wrong (e.g. HDFC0001234)';
+    return out;
+};
+
+const assertKyc = (seller) => {
+    const problems = kycProblems({ legal: seller.legal, bank: seller.bank });
+    const entries = Object.entries(problems);
+    if (entries.length) throw new AppError(entries[0][1], 400, entries.map(([path, message]) => ({ path, message })));
 };
 
 /** Where riders collect a seller's orders. */
@@ -111,7 +224,10 @@ export const updateApplication = async (sellerId, input) => {
     if (!open && (businessName || legal)) throw new ValidationError('Business name and tax details can only be changed by Nearmart support after approval');
     if (businessName) seller.businessName = businessName;
     if (ownerName) seller.ownerName = ownerName;
-    if (legal) seller.legal = { ...seller.legal?.toObject?.(), ...legal };
+    if (legal) {
+        const clean = Object.fromEntries(Object.entries(legal).map(([k, v]) => [k, typeof v === 'string' ? v.trim().toUpperCase() : v]));
+        seller.legal = { ...seller.legal?.toObject?.(), ...clean };
+    }
     if (store) seller.store = { ...seller.store?.toObject?.(), ...store };
     if (address) seller.address = { ...seller.address?.toObject?.(), ...address };
     if (bank) seller.bank = { ...seller.bank?.toObject?.(), ...bank };
@@ -119,6 +235,7 @@ export const updateApplication = async (sellerId, input) => {
         if (!open) throw new ValidationError('Use "Sell in another shop" to add a shop after approval');
         seller.modules = await checkedModules(modules);
     }
+    if (legal || bank) assertKyc(seller);
     await seller.save();
     if (!open && bank) alertAdmins(`${seller.businessName} changed bank details`, 'Check them before the next payout.', 'staff.seller.bank_changed', seller._id);
     if (!open) await syncVisibility(seller);
@@ -157,6 +274,7 @@ export const submitApplication = async (sellerId) => {
     if (!EDITABLE_BEFORE_APPROVAL.includes(seller.status)) throw new ConflictError('This application has already been submitted');
     const missing = missingForSubmit(seller);
     if (missing.length) throw new ValidationError(`Please add: ${missing.join(', ')}`);
+    assertKyc(seller);
     seller.status = 'submitted';
     seller.submittedAt = new Date();
     seller.rejectionReason = '';
@@ -245,7 +363,7 @@ export const getSellerAdmin = async (sellerId) => {
     if (!seller) throw new NotFoundError('Seller not found');
     const productCount = await Product.countDocuments({ seller: seller._id });
     const { password, ...rest } = seller;
-    return { ...rest, productCount, effectiveCommission: Object.fromEntries((await Promise.all(seller.modules.map(async (m) => [m.key, commissionFor(seller, m.key, await getConfig())])))) };
+    return { ...rest, productCount, kycWarnings: kycProblems(seller), tradingNow: isTrading(seller), effectiveCommission: Object.fromEntries((await Promise.all(seller.modules.map(async (m) => [m.key, commissionFor(seller, m.key, await getConfig())])))) };
 };
 
 const record = (seller, status, by, note = '') => seller.statusHistory.push({ status, by: { kind: 'staff', id: by }, note });
@@ -322,6 +440,11 @@ export const updateSellerAdmin = async (sellerId, { commission, zones, isActive 
     if (commission) {
         if (commission.percent !== undefined) seller.commission.percent = commission.percent;
         if (commission.fixedFeePaise !== undefined) seller.commission.fixedFeePaise = commission.fixedFeePaise;
+        for (const [module, value] of Object.entries(commission.byModule ?? {})) {
+            // Both null clears that shop's override.
+            if (value.percent == null && value.fixedFeePaise == null) seller.commission.byModule.delete(module);
+            else seller.commission.byModule.set(module, { percent: value.percent ?? null, fixedFeePaise: value.fixedFeePaise ?? null });
+        }
     }
     if (zones) seller.zones = zones;
     if (isActive !== undefined) {

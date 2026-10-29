@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { Check, Plus, Star, Trash2, X } from 'lucide-react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { AlertTriangle, Check, Clock, Plus, Star, Trash2, X } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api, fieldErrors } from '../lib/api.js';
 import { paiseToRupees, rupeesToPaise } from '../lib/money.js';
@@ -202,6 +202,8 @@ export default function ProductEditor() {
     const shops = approvedShops(seller);
     const [form, setForm] = useState(null);
     const [formError, setFormError] = useState('');
+    const location = useLocation();
+    const createdMessage = location.state?.created ? location.state.message : null;
 
     const { data: product, error: loadError } = useQuery({
         queryKey: ['product', id],
@@ -234,7 +236,8 @@ export default function ProductEditor() {
             queryClient.invalidateQueries({ queryKey: ['dashboard'] });
             queryClient.setQueryData(['product', res.data.data._id], res.data.data);
             if (isEdit) setForm(fromProduct(res.data.data));
-            else navigate(`/products/${res.data.data._id}`, { replace: true, state: { created: true } });
+            // The API's message says whether Nearmart reviews the product before customers see it.
+            else navigate(`/products/${res.data.data._id}`, { replace: true, state: { created: true, message: res.data.message } });
         }
     });
 
@@ -296,6 +299,21 @@ export default function ProductEditor() {
             <ErrorNote error={formError || save.error || remove.error} />
             {save.isSuccess && !save.isPending && (
                 <p className="flex items-center gap-1 text-sm text-brand-700" role="status"><Check className="h-4 w-4" aria-hidden="true" />Saved.</p>
+            )}
+            {createdMessage && !save.isSuccess && (
+                <Notice tone={product?.review?.status === 'pending' ? 'amber' : 'green'} icon={product?.review?.status === 'pending' ? Clock : Check}>
+                    {createdMessage}
+                </Notice>
+            )}
+            {product?.review?.status === 'pending' && !createdMessage && (
+                <Notice tone="amber" icon={Clock} title="Waiting for Nearmart's review">
+                    Customers will see this product once Nearmart approves it. You can still edit it meanwhile.
+                </Notice>
+            )}
+            {product?.review?.status === 'rejected' && (
+                <Notice tone="red" icon={AlertTriangle} title={`Sent back${product.review.note ? `: ${product.review.note}` : ''}`}>
+                    Customers can't see this product. Make the changes Nearmart asked for and save it, or contact Nearmart if you have questions.
+                </Notice>
             )}
             {isEdit && !moduleApproved && (
                 <Notice tone="amber" title={`You are no longer approved to sell in ${shopLabel(form.module)}`}>

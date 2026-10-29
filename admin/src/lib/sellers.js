@@ -42,6 +42,45 @@ export const PAYOUT_MODES = [
 ];
 export const PAYOUT_MODE_LABELS = Object.fromEntries(PAYOUT_MODES.map((m) => [m.id, m.label]));
 
+/** Seller opening hours use day 0 = Sunday (India time). */
+export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** Field paths in the seller's kycWarnings → readable names. */
+export const KYC_FIELD_LABELS = {
+    'legal.pan': 'PAN',
+    'legal.gstin': 'GSTIN',
+    'legal.fssai': 'FSSAI licence',
+    'bank.ifsc': 'IFSC'
+};
+
+export const PRODUCT_REVIEW_LABELS = { pending: 'Waiting', approved: 'Approved', rejected: 'Sent back' };
+export const PRODUCT_REVIEW_TONES = { pending: 'amber', approved: 'green', rejected: 'red' };
+
+/** Rows (arrays) → CSV text, quoting every cell that needs it. */
+export const toCsv = (rows) =>
+    rows
+        .map((row) =>
+            row
+                .map((cell) => {
+                    const s = cell == null ? '' : String(cell);
+                    return /[",\n\r]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+                })
+                .join(',')
+        )
+        .join('\r\n');
+
+/** Saves text as a file in the browser. */
+export const downloadText = (filename, text, type = 'text/csv;charset=utf-8') => {
+    const url = URL.createObjectURL(new Blob([`﻿${text}`], { type }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+};
+
 /** "10% + ₹5" style summary of a commission; `format` turns paise into money text. */
 export const commissionText = ({ percent, fixedFeePaise } = {}, format) =>
     `${percent ?? 0}%${fixedFeePaise ? ` + ${format(fixedFeePaise)}` : ''}`;

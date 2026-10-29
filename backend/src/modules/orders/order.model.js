@@ -62,6 +62,8 @@ const orderSchema = new mongoose.Schema(
         },
         /** The settlement that paid the seller for this order. */
         payout: { type: ObjectId, ref: 'Payout', default: null },
+        /** When staff were alerted that the seller hadn't accepted it yet. */
+        sellerAlertedAt: { type: Date, default: null },
         deliveredAt: { type: Date, default: null },
         items: { type: [lineSchema], validate: [(v) => v.length > 0, 'An order needs items'] },
         address: {
@@ -90,6 +92,8 @@ const orderSchema = new mongoose.Schema(
         coupon: {
             code: String,
             discountPaise: Number,
+            /** Who pays the discount: Nearmart, or the seller (taken from their payout). */
+            fundedBy: { type: String, enum: ['platform', 'seller'], default: 'platform' },
             coupon: { type: ObjectId, ref: 'Coupon' }
         },
         payment: {

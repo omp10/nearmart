@@ -47,6 +47,13 @@ const productSchema = new mongoose.Schema(
         sellerName: { type: String, default: '' },
         /** Set while the seller is not approved, closed, or not approved for this module. */
         sellerHidden: { type: Boolean, default: false },
+        /** The seller's service areas, copied here so catalogue queries can filter by the customer's zone (empty = everywhere). */
+        sellerZones: { type: [mongoose.Schema.Types.ObjectId], default: [] },
+        /** Admin review of a seller's new product (when reviews are on): pending and rejected products stay hidden. */
+        review: {
+            status: { type: String, enum: ['approved', 'pending', 'rejected'], default: 'approved' },
+            note: { type: String, trim: true, default: '', maxlength: 300 }
+        },
         category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
         /** The category and all its ancestors, so filtering by a parent category finds this product. */
         categoryPath: { type: [mongoose.Schema.Types.ObjectId], default: [] },

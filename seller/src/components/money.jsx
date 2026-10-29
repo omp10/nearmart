@@ -1,5 +1,5 @@
 import { CalendarCheck, Hourglass, IndianRupee, Wallet } from 'lucide-react';
-import { formatPaise } from '../lib/money.js';
+import { formatPaise, formatSignedPaise } from '../lib/money.js';
 
 function BalanceTile({ icon: Icon, label, value, hint, tone = 'slate' }) {
     const tones = { slate: 'text-slate-500', green: 'text-brand-700', amber: 'text-amber-600', blue: 'text-sky-600' };
@@ -17,9 +17,12 @@ function BalanceTile({ icon: Icon, label, value, hint, tone = 'slate' }) {
 
 /** Where the seller's money stands (payout.service balanceFor). */
 export function BalanceGrid({ balance, className = 'grid gap-3 sm:grid-cols-2' }) {
+    const orders = `${balance.payableOrders} delivered order${balance.payableOrders === 1 ? '' : 's'}`;
+    // Credits and debits from Nearmart not yet in a payout are already included in "Ready to be paid".
+    const adjustments = balance.adjustmentsPaise ? ` ${formatSignedPaise(balance.adjustmentsPaise)} adjustments` : '';
     return (
         <div className={className}>
-            <BalanceTile icon={Wallet} tone="green" label="Ready to be paid" value={formatPaise(balance.payablePaise)} hint={`${balance.payableOrders} delivered order${balance.payableOrders === 1 ? '' : 's'}`} />
+            <BalanceTile icon={Wallet} tone="green" label="Ready to be paid" value={formatPaise(balance.payablePaise)} hint={`${orders}${adjustments ? ` ·${adjustments}` : ''}`} />
             <BalanceTile icon={Hourglass} tone="amber" label="On hold" value={formatPaise(balance.onHoldPaise)} hint="Recently delivered, in the hold period" />
             <BalanceTile icon={CalendarCheck} tone="blue" label="In a payout" value={formatPaise(balance.inPayoutPaise)} hint="Being paid out by Nearmart" />
             <BalanceTile icon={IndianRupee} label="Paid to you" value={formatPaise(balance.paidPaise)} hint="All time" />

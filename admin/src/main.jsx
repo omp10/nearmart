@@ -10,6 +10,7 @@ import './index.css';
 
 // Each page loads when first opened, so the first screen stays small.
 const Banners = lazy(() => import('./pages/Banners.jsx'));
+const OfferCards = lazy(() => import('./pages/OfferCards.jsx'));
 const BookingDetail = lazy(() => import('./pages/BookingDetail.jsx'));
 const Bookings = lazy(() => import('./pages/Bookings.jsx'));
 const Categories = lazy(() => import('./pages/Categories.jsx'));
@@ -30,6 +31,7 @@ const RiderDetail = lazy(() => import('./pages/Riders.jsx').then((m) => ({ defau
 const Riders = lazy(() => import('./pages/Riders.jsx').then((m) => ({ default: m.Riders })));
 const SellerDetail = lazy(() => import('./pages/Sellers.jsx').then((m) => ({ default: m.SellerDetail })));
 const Sellers = lazy(() => import('./pages/Sellers.jsx').then((m) => ({ default: m.Sellers })));
+const SellerReviews = lazy(() => import('./pages/SellerReviews.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 const Slots = lazy(() => import('./pages/Slots.jsx'));
 const Staff = lazy(() => import('./pages/Staff.jsx'));
@@ -99,10 +101,12 @@ createRoot(document.getElementById('root')).render(
                             <Route path="customers" element={<RequirePermission section="customers"><Customers /></RequirePermission>} />
                             <Route path="customers/:id" element={<RequirePermission section="customers"><CustomerDetail /></RequirePermission>} />
                             <Route path="sellers" element={<RequirePermission section="sellers"><Sellers /></RequirePermission>} />
-                            <Route path="sellers/:id" element={<RequirePermission section="sellers"><SellerDetail /></RequirePermission>} />
+                            <Route path="sellers/reviews" element={<RequirePermission section="sellers"><SellerReviews /></RequirePermission>} />
+                            <Route path="sellers/:id"element={<RequirePermission section="sellers"><SellerDetail /></RequirePermission>} />
                             <Route path="payouts" element={<RequirePermission section="payouts"><Payouts /></RequirePermission>} />
                             <Route path="payouts/:id" element={<RequirePermission section="payouts"><PayoutDetail /></RequirePermission>} />
                             <Route path="banners" element={<RequirePermission section="banners"><Banners /></RequirePermission>} />
+                            <Route path="offer-cards" element={<RequirePermission section="banners"><OfferCards /></RequirePermission>} />
                             <Route path="reports" element={<RequirePermission section="reports"><Reports /></RequirePermission>} />
                             <Route path="settings" element={<RequirePermission section="settings"><Settings /></RequirePermission>} />
                             <Route path="coupons" element={<RequirePermission section="coupons"><Coupons /></RequirePermission>} />

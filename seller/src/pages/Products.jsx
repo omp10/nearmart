@@ -17,9 +17,16 @@ function Thumb({ src }) {
 }
 
 function StatusBadges({ p }) {
+    const review = p.review?.status;
     return (
         <span className="flex flex-wrap gap-1">
-            {p.isActive ? <Badge tone="green">On sale</Badge> : <Badge>Hidden</Badge>}
+            {review === 'pending' && <Badge tone="amber">Waiting for Nearmart's review</Badge>}
+            {review === 'rejected' && (
+                <span className="inline-block max-w-full rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700" title={p.review.note || undefined}>
+                    <span className="line-clamp-2">Sent back{p.review.note ? `: ${p.review.note}` : ''}</span>
+                </span>
+            )}
+            {p.isActive ? <Badge tone={review && review !== 'approved' ? 'slate' : 'green'}>On sale</Badge> : <Badge>Hidden</Badge>}
             {p.totalStock === 0 && <Badge tone="red">Out of stock</Badge>}
             {p.sellerHidden && p.isActive && <Badge tone="amber">Not shown: store closed</Badge>}
         </span>

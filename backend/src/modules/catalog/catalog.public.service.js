@@ -66,14 +66,17 @@ const visibilityFilter = async () => {
     return {
         isActive: true,
         sellerHidden: { $ne: true },
+        'review.status': { $nin: ['pending', 'rejected'] },
         ...(inactiveModules.length ? { module: { $nin: inactiveModules } } : {}),
         ...(hiddenCategories.length ? { categoryPath: { $nin: hiddenCategories } } : {})
     };
 };
 
-export const listPublicProducts = async ({ module, category, q, brand, minPrice, maxPrice, inStock, featured, sort, page, limit }) => {
+export const listPublicProducts = async ({ module, category, q, brand, minPrice, maxPrice, inStock, featured, sort, page, limit, zone }) => {
     const filter = await visibilityFilter();
     const and = [];
+    // Nearmart's own stock and sellers serving everywhere show anywhere; other sellers only in their areas.
+    if (zone?.length) and.push({ $or: [{ seller: null }, { sellerZones: { $size: 0 } }, { sellerZones: { $in: zone.map((z) => new mongoose.Types.ObjectId(z)) } }] });
     if (module) and.push({ module });
     if (category) and.push({ categoryPath: new mongoose.Types.ObjectId(category) });
     if (brand) and.push({ brand: new RegExp(`^${escapeRegex(brand)}$`, 'i') });

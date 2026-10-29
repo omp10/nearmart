@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
 import { formatPaise } from '../lib/money.js';
-import { PAYOUT_MODES, PAYOUT_MODE_LABELS, PAYOUT_STATUS_LABELS, PAYOUT_STATUS_TONES, SELLER_STATUS_LABELS } from '../lib/sellers.js';
+import { PAYOUT_MODES, PAYOUT_MODE_LABELS, PAYOUT_STATUS_LABELS, PAYOUT_STATUS_TONES, SELLER_STATUS_LABELS, downloadText, toCsv } from '../lib/sellers.js';
 import { BUSINESS_MODULES } from '../nav.js';
 import { Badge, ErrorNote, Modal, Pager } from '../components/ui.jsx';
 
@@ -14,7 +14,8 @@ const MODULE_LABELS = Object.fromEntries(BUSINESS_MODULES.map((m) => [m.id, m.la
 
 const TABS = [
     ['balances', 'Balances'],
-    ['payouts', 'Payouts']
+    ['payouts', 'Payouts'],
+    ['report', 'Commission report']
 ];
 
 /** Pill filters, as on the Orders page. */
@@ -37,7 +38,7 @@ function Pills({ options, value, onChange, label }) {
     );
 }
 
-/** Per-order settlement rows: gross, commission, fee and what the seller gets. */
+/** Per-order settlement rows: gross, commission, fee, seller-funded coupon and what the seller gets. */
 function StatementTable({ orders, empty }) {
     return (
         <table className="w-full text-sm">
@@ -48,11 +49,12 @@ function StatementTable({ orders, empty }) {
                     <th className="px-4 py-3 text-right font-medium">Items</th>
                     <th className="px-4 py-3 text-right font-medium">Commission</th>
                     <th className="px-4 py-3 text-right font-medium">Fee</th>
+                    <th className="px-4 py-3 text-right font-medium" title="Coupon discounts the seller pays">Seller coupon</th>
                     <th className="px-4 py-3 text-right font-medium">Seller gets</th>
                 </tr>
             </thead>
             <tbody>
-                {!orders?.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">{empty}</td></tr>}
+                {!orders?.length && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">{empty}</td></tr>}
                 {orders?.map((o) => (
                     <tr key={o._id} className="border-t border-slate-100">
                         <td className="px-4 py-3">
@@ -66,6 +68,7 @@ function StatementTable({ orders, empty }) {
                             <span className="block text-xs text-slate-400">{o.commissionPercent}%</span>
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums text-slate-600">{o.feePaise ? `−${formatPaise(o.feePaise)}` : '—'}</td>
+                        <td className="px-4 py-3 text-right tabular-nums text-slate-600">{o.sellerDiscountPaise ? `−${formatPaise(o.sellerDiscountPaise)}` : '—'}</td>
                         <td className="px-4 py-3 text-right font-medium tabular-nums">{formatPaise(o.netPaise)}</td>
                     </tr>
                 ))}
@@ -91,6 +94,7 @@ function EarningsView({ seller }) {
         <div className="space-y-4">
             <p className="text-sm text-slate-600">
                 {t.orders} delivered orders · items {formatPaise(t.grossPaise)} · commission {formatPaise(t.commissionPaise)} · fees {formatPaise(t.feePaise)} ·{' '}
+                {t.sellerDiscountPaise > 0 && <>seller-funded coupons {formatPaise(t.sellerDiscountPaise)} ·{' '}</>}
                 <span className="font-medium text-slate-800">seller earned {formatPaise(t.netPaise)}</span>
             </p>
             <div className="max-h-[60vh] overflow-auto rounded-lg border border-slate-100">
@@ -136,6 +140,7 @@ function BalancesTab() {
                         <tr>
                             <th className="px-4 py-3 font-medium">Seller</th>
                             <th className="px-4 py-3 text-right font-medium">Payable</th>
+                            <th className="px-4 py-3 text-right font-medium" title="Credits and debits waiting for the next payout (already in Payable)">Adjustments</th>
                             <th className="px-4 py-3 text-right font-medium">On hold</th>
                             <th className="px-4 py-3 text-right font-medium">In payout</th>
                             <th className="px-4 py-3 text-right font-medium">Paid</th>
@@ -143,8 +148,8 @@ function BalancesTab() {
                         </tr>
                     </thead>
                     <tbody>
-                        {isLoading && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">Loading…</td></tr>}
-                        {data?.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No approved sellers yet.</td></tr>}
+                        {isLoading && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">Loading…</td></tr>}
+                        {data?.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">No approved sellers yet.</td></tr>}
                         {data?.map((r) => (
                             <tr key={r.seller._id} className="border-t border-slate-100 hover:bg-slate-50">
                                 <td className="px-4 py-3">
@@ -159,6 +164,9 @@ function BalancesTab() {
                                 <td className={`px-4 py-3 text-right tabular-nums ${r.payablePaise > 0 ? 'font-medium' : 'text-slate-400'}`}>
                                     {formatPaise(r.payablePaise)}
                                     {r.payableOrders > 0 && <span className="block text-xs font-normal text-slate-500">{r.payableOrders} orders</span>}
+                                </td>
+                                <td className={`px-4 py-3 text-right tabular-nums ${r.adjustmentsPaise < 0 ? 'text-red-700' : r.adjustmentsPaise > 0 ? 'text-brand-700' : 'text-slate-400'}`}>
+                                    {r.adjustmentsPaise ? `${r.adjustmentsPaise < 0 ? '−' : '+'}${formatPaise(Math.abs(r.adjustmentsPaise))}` : '—'}
                                 </td>
                                 <td className="px-4 py-3 text-right tabular-nums text-slate-600">{formatPaise(r.onHoldPaise)}</td>
                                 <td className={`px-4 py-3 text-right tabular-nums ${r.inPayoutPaise > 0 ? 'text-amber-700' : 'text-slate-600'}`}>{formatPaise(r.inPayoutPaise)}</td>
@@ -260,6 +268,120 @@ function PayoutsTab() {
     );
 }
 
+/** YYYY-MM-DD of a date in India time. */
+const istDay = (d = new Date()) => new Date(d.getTime() + 330 * 60_000).toISOString().slice(0, 10);
+const monthStart = () => `${istDay().slice(0, 8)}01`;
+const rupees = (paise) => ((paise ?? 0) / 100).toFixed(2);
+
+function SummaryCard({ label, value, hint }) {
+    return (
+        <div className="card">
+            <p className="text-xs text-slate-500">{label}</p>
+            <p className="text-xl font-semibold tabular-nums">{value}</p>
+            {hint && <p className="text-xs text-slate-500">{hint}</p>}
+        </div>
+    );
+}
+
+/** What Nearmart earned from sellers in a date range, per seller, with a CSV export. */
+function ReportTab() {
+    const { can } = useAuth();
+    const [range, setRange] = useState(() => ({ from: monthStart(), to: istDay() }));
+    const params = { ...(range.from ? { from: range.from } : {}), ...(range.to ? { to: range.to } : {}) };
+    const badRange = range.from && range.to && range.from > range.to;
+    const { data, isLoading, isFetching, error } = useQuery({
+        queryKey: ['commission-report', params],
+        queryFn: () => api.get('/admin/payouts/report', { params }).then((r) => r.data.data),
+        placeholderData: keepPreviousData,
+        enabled: !badRange
+    });
+    const t = data?.totals;
+
+    const download = () => {
+        const header = ['Seller', 'Seller ID', 'Shops (orders)', 'Orders', 'Items sold (Rs)', 'Commission (Rs)', 'Fixed fees (Rs)', 'Seller-funded coupons (Rs)', 'Seller earned (Rs)'];
+        const shops = (byModule) => Object.entries(byModule ?? {}).map(([m, n]) => `${MODULE_LABELS[m] ?? m} ${n}`).join('; ');
+        const rows = data.sellers.map((r) => [r.name, r.sellerId, shops(r.byModule), r.orders, rupees(r.grossPaise), rupees(r.commissionPaise), rupees(r.feePaise), rupees(r.sellerDiscountPaise), rupees(r.netPaise)]);
+        const totalRow = ['All sellers', '', '', t.orders, rupees(t.grossPaise), rupees(t.commissionPaise), rupees(t.feePaise), rupees(t.sellerDiscountPaise), rupees(t.netPaise)];
+        const extra = [[], ['Nearmart own sales', '', '', data.nearmart.orders, rupees(data.nearmart.salesPaise)], ['Delivery fees', '', '', '', rupees(data.deliveryFeesPaise)]];
+        downloadText(`nearmart-commission-${range.from || 'start'}-to-${range.to || 'today'}.csv`, toCsv([header, ...rows, totalRow, ...extra]));
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="flex flex-wrap items-end gap-3">
+                <div>
+                    <label className="label" htmlFor="report-from">From</label>
+                    <input id="report-from" className="input" type="date" value={range.from} max={range.to || undefined} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} />
+                </div>
+                <div>
+                    <label className="label" htmlFor="report-to">To</label>
+                    <input id="report-to" className="input" type="date" value={range.to} min={range.from || undefined} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} />
+                </div>
+                <button type="button" className="btn-ghost" onClick={() => setRange({ from: monthStart(), to: istDay() })}>This month</button>
+                <button type="button" className="btn-ghost border border-slate-200 sm:ml-auto" disabled={!data || badRange} onClick={download}>Download CSV</button>
+            </div>
+            <p className="text-sm text-slate-500">Delivered orders in this range (India time), by delivery date. Rates are the ones fixed on each order.</p>
+            <ErrorNote error={badRange ? 'The start date is after the end date.' : error} />
+            {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+            {data && (
+                <div className={`space-y-4 ${isFetching ? 'opacity-60' : ''}`}>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <SummaryCard label="Commission + fees earned" value={formatPaise(t.commissionPaise + t.feePaise)} hint={`${formatPaise(t.commissionPaise)} commission · ${formatPaise(t.feePaise)} fees`} />
+                        <SummaryCard label="Seller sales" value={formatPaise(t.grossPaise)} hint={`${t.orders} orders · sellers earned ${formatPaise(t.netPaise)}`} />
+                        <SummaryCard label="Nearmart's own sales" value={formatPaise(data.nearmart.salesPaise)} hint={`${data.nearmart.orders} orders`} />
+                        <SummaryCard label="Delivery fees" value={formatPaise(data.deliveryFeesPaise)} hint="All delivered orders" />
+                    </div>
+                    <div className="card overflow-x-auto p-0">
+                        <table className="w-full text-sm">
+                            <thead className="bg-slate-50 text-left text-slate-500">
+                                <tr>
+                                    <th className="px-4 py-3 font-medium">Seller</th>
+                                    <th className="px-4 py-3 text-right font-medium">Orders</th>
+                                    <th className="px-4 py-3 text-right font-medium">Items sold</th>
+                                    <th className="px-4 py-3 text-right font-medium">Commission</th>
+                                    <th className="px-4 py-3 text-right font-medium">Fees</th>
+                                    <th className="px-4 py-3 text-right font-medium">Seller coupons</th>
+                                    <th className="px-4 py-3 text-right font-medium">Seller earned</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {!data.sellers.length && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">No delivered seller orders in this range.</td></tr>}
+                                {data.sellers.map((r) => (
+                                    <tr key={r.sellerId} className="border-t border-slate-100">
+                                        <td className="px-4 py-3">
+                                            {can('sellers') ? <Link to={`/sellers/${r.sellerId}`} className="font-medium text-brand-700 hover:underline">{r.name || 'Seller'}</Link> : <span className="font-medium">{r.name || 'Seller'}</span>}
+                                            <span className="block text-xs text-slate-500">{Object.entries(r.byModule ?? {}).map(([m, n]) => `${MODULE_LABELS[m] ?? m} ${n}`).join(' · ')}</span>
+                                        </td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{r.orders}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{formatPaise(r.grossPaise)}</td>
+                                        <td className="px-4 py-3 text-right font-medium tabular-nums">{formatPaise(r.commissionPaise)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums text-slate-600">{formatPaise(r.feePaise)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums text-slate-600">{r.sellerDiscountPaise ? formatPaise(r.sellerDiscountPaise) : '—'}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{formatPaise(r.netPaise)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            {data.sellers.length > 1 && (
+                                <tfoot>
+                                    <tr className="border-t border-slate-200 font-semibold">
+                                        <td className="px-4 py-3">All sellers</td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{t.orders}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{formatPaise(t.grossPaise)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{formatPaise(t.commissionPaise)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{formatPaise(t.feePaise)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{formatPaise(t.sellerDiscountPaise)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums">{formatPaise(t.netPaise)}</td>
+                                    </tr>
+                                </tfoot>
+                            )}
+                        </table>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function Payouts() {
     const [searchParams, setSearchParams] = useSearchParams();
     const tab = TABS.some(([t]) => t === searchParams.get('tab')) ? searchParams.get('tab') : 'balances';
@@ -288,6 +410,7 @@ export function Payouts() {
 
             {tab === 'balances' && <BalancesTab />}
             {tab === 'payouts' && <PayoutsTab />}
+            {tab === 'report' && <ReportTab />}
         </div>
     );
 }
@@ -305,7 +428,7 @@ function Row({ label, value, strong = false }) {
 
 function MarkPaidForm({ payout, onDone }) {
     const queryClient = useQueryClient();
-    const bank = payout.seller?.bank ?? {};
+    const bank = payout.bank ?? {};
     const [form, setForm] = useState({ mode: bank.accountNumber ? 'bank' : bank.upiId ? 'upi' : 'bank', reference: '', note: '' });
     const set = (patch) => setForm((f) => ({ ...f, ...patch }));
     const paid = useMutation({
@@ -383,8 +506,11 @@ export function PayoutDetail() {
     if (error) return <ErrorNote error={error} />;
 
     const canUpdate = can('payouts', 'update') && payout.status === 'pending';
-    const bank = payout.seller?.bank ?? {};
+    // The bank details copied onto the payout when it was made, not the seller's current ones.
+    const bank = payout.bank ?? {};
     const hasBank = Boolean(bank.accountNumber || bank.upiId);
+    const adjustments = payout.adjustments ?? [];
+    const signed = (paise) => `${paise < 0 ? '−' : '+'}${formatPaise(Math.abs(paise))}`;
 
     return (
         <div className="space-y-6">
@@ -429,14 +555,47 @@ export function PayoutDetail() {
                         <Row label={`Items sold (${payout.orderCount} orders)`} value={formatPaise(payout.grossPaise)} />
                         <Row label="Commission" value={`−${formatPaise(payout.commissionPaise)}`} />
                         {payout.feePaise > 0 && <Row label="Fixed fees" value={`−${formatPaise(payout.feePaise)}`} />}
+                        {payout.sellerDiscountPaise > 0 && <Row label="Seller-funded coupons" value={`−${formatPaise(payout.sellerDiscountPaise)}`} />}
+                        {(payout.adjustmentsPaise || adjustments.length > 0) && (
+                            <Row label={`Adjustments (${adjustments.length})`} value={signed(payout.adjustmentsPaise ?? 0)} />
+                        )}
                         <Row label="To pay the seller" value={formatPaise(payout.netPaise)} strong />
                     </div>
+                    {adjustments.length > 0 && (
+                        <div className="border-t border-slate-100">
+                            <h3 className="px-4 pt-3 pb-1 text-sm font-semibold">Adjustments</h3>
+                            <ul className="divide-y divide-slate-100 px-4 pb-3 text-sm">
+                                {adjustments.map((a) => (
+                                    <li key={a._id} className="flex justify-between gap-3 py-2">
+                                        <span>
+                                            {a.reason}
+                                            <span className="block text-xs text-slate-500">
+                                                {when(a.createdAt)}
+                                                {a.order && (
+                                                    <>
+                                                        {' · '}
+                                                        <Link to={`/orders/${a.order._id ?? a.order}`} className="hover:underline">{a.order.orderNumber ? `#${a.order.orderNumber}` : 'Order'}</Link>
+                                                    </>
+                                                )}
+                                            </span>
+                                        </span>
+                                        <span className={`whitespace-nowrap font-medium tabular-nums ${a.amountPaise < 0 ? 'text-red-700' : 'text-brand-700'}`}>{signed(a.amountPaise)}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
                 </section>
 
                 <div className="space-y-6">
                     <section className="card space-y-1 text-sm">
-                        <h2 className="mb-2 font-semibold">Pay to</h2>
-                        {!hasBank && <p className="rounded bg-amber-50 p-2 text-amber-800">No bank account or UPI ID on file. Ask the seller to add one in their dashboard.</p>}
+                        <h2 className="font-semibold">Pay to (saved when this payout was made)</h2>
+                        <p className="mb-2 text-xs text-slate-500">A later change to the seller's bank details doesn't affect this payout.</p>
+                        {!hasBank && (
+                            <p className="rounded bg-amber-50 p-2 text-amber-800">
+                                No bank account or UPI ID was saved on this payout. Ask the seller to add one in their dashboard, then cancel this payout and create a new one.
+                            </p>
+                        )}
                         {bank.accountNumber && (
                             <>
                                 <p><span className="text-slate-500">Account name: </span>{bank.accountName || '—'}</p>

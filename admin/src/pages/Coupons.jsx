@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
 import { useCurrentModule } from '../lib/moduleContext.jsx';
@@ -21,8 +22,20 @@ const toForm = (c, module) => ({
     usageLimit: c?.usageLimit ? String(c.usageLimit) : '',
     perUserLimit: String(c?.perUserLimit ?? 1),
     firstOrderOnly: c?.firstOrderOnly ?? false,
+    seller: c?.seller ? String(c.seller._id ?? c.seller) : '',
+    fundedBy: c?.fundedBy ?? 'platform',
     isActive: c?.isActive ?? true
 });
+
+/** Approved marketplace sellers, for limiting a coupon to one store. Needs the sellers view permission. */
+function useApprovedSellers(enabled) {
+    return useQuery({
+        queryKey: ['sellers', { status: 'approved', limit: 100 }],
+        queryFn: () => api.get('/admin/sellers', { params: { status: 'approved', limit: 100 } }).then((r) => r.data.data.items),
+        enabled,
+        staleTime: 5 * 60_000
+    });
+}
 
 const describe = (c) => {
     const amount = c.type === 'percent' ? `${c.value}% off` : `${formatPaise(c.value)} off`;
@@ -42,6 +55,9 @@ const status = (c) => {
 
 function CouponForm({ coupon, onDone }) {
     const queryClient = useQueryClient();
+    const { can } = useAuth();
+    const canSeeSellers = can('sellers');
+    const { data: sellers = [], isLoading: sellersLoading } = useApprovedSellers(canSeeSellers);
     const { data: modules = [] } = useModules();
     // From Global a new coupon starts on every module; from a module, on that one.
     const { module, isGlobal } = useCurrentModule();
@@ -64,6 +80,8 @@ function CouponForm({ coupon, onDone }) {
         const maxDiscountPaise = form.type === 'percent' ? rupeesToPaise(form.maxDiscount) : null;
         const minOrderPaise = rupeesToPaise(form.minOrder) ?? 0;
         if ([value, maxDiscountPaise, minOrderPaise].some(Number.isNaN) || !value) return setFormError('Check the amounts');
+        // Mirrors the server rule: the seller can only pay for a coupon limited to them.
+        if (form.fundedBy === 'seller' && !form.seller) return setFormError('A seller-funded coupon must be limited to that seller');
         return save.mutate({
             code: form.code,
             description: form.description,
@@ -77,6 +95,8 @@ function CouponForm({ coupon, onDone }) {
             usageLimit: form.usageLimit ? Number.parseInt(form.usageLimit, 10) : null,
             perUserLimit: Number.parseInt(form.perUserLimit, 10) || 1,
             firstOrderOnly: form.firstOrderOnly,
+            seller: form.seller || null,
+            fundedBy: form.seller ? form.fundedBy : 'platform',
             isActive: form.isActive
         });
     };
@@ -146,6 +166,45 @@ function CouponForm({ coupon, onDone }) {
                 </div>
                 <p className="mt-1 text-xs text-slate-500">Leave all unticked to apply everywhere.</p>
             </fieldset>
+            <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label className="label" htmlFor="cp-seller">Only for seller (optional)</label>
+                    {canSeeSellers ? (
+                        <select
+                            id="cp-seller"
+                            className="input"
+                            value={form.seller}
+                            onChange={(e) => set({ seller: e.target.value, ...(e.target.value ? {} : { fundedBy: 'platform' }) })}
+                            disabled={sellersLoading}
+                        >
+                            <option value="">Any store (Nearmart's included)</option>
+                            {sellers.map((s) => <option key={s._id} value={s._id}>{s.businessName}</option>)}
+                            {form.seller && !sellersLoading && !sellers.some((s) => s._id === form.seller) && (
+                                <option value={form.seller}>A seller not approved now</option>
+                            )}
+                        </select>
+                    ) : (
+                        <p id="cp-seller" className="input bg-slate-50 text-slate-500">{form.seller ? 'One marketplace seller' : 'Any store'}</p>
+                    )}
+                    <p className="mt-1 text-xs text-slate-500">
+                        {canSeeSellers ? "The coupon then works only on that seller's items." : 'You need access to Sellers to change this.'}
+                    </p>
+                </div>
+                <div>
+                    <label className="label" htmlFor="cp-funded">Discount paid by</label>
+                    <select id="cp-funded" className="input" value={form.seller ? form.fundedBy : 'platform'} onChange={(e) => set({ fundedBy: e.target.value })} disabled={!form.seller}>
+                        <option value="platform">Nearmart</option>
+                        <option value="seller">The seller</option>
+                    </select>
+                    <p className="mt-1 text-xs text-slate-500">
+                        {!form.seller
+                            ? 'Choose a seller first: only a coupon limited to one seller can be paid for by that seller.'
+                            : form.fundedBy === 'seller'
+                                ? "The discount comes out of the seller's payout."
+                                : 'Nearmart pays the discount; the seller is paid in full.'}
+                    </p>
+                </div>
+            </div>
             <div className="flex flex-wrap gap-6">
                 <label className="flex items-center gap-2 text-sm">
                     <input type="checkbox" checked={form.firstOrderOnly} onChange={(e) => set({ firstOrderOnly: e.target.checked })} />
@@ -170,6 +229,8 @@ export default function Coupons() {
     const [editing, setEditing] = useState(null);
     const { module, modules, isGlobal } = useCurrentModule();
     const name = modules.find((m) => m.key === module)?.name ?? module;
+    const { data: sellers = [] } = useApprovedSellers(can('sellers'));
+    const sellerName = (sellerId) => sellers.find((s) => s._id === String(sellerId))?.businessName ?? 'one seller';
     const { data: all = [], isLoading, error } = useQuery({
         queryKey: ['coupons'],
         queryFn: () => api.get('/admin/coupons').then((r) => r.data.data)
@@ -210,7 +271,16 @@ export default function Coupons() {
                             <tr key={c._id} className="border-t border-slate-100">
                                 <td className="px-4 py-3 font-mono font-medium">{c.code}</td>
                                 <td className="px-4 py-3">{describe(c)}{c.firstOrderOnly && <span className="block text-xs text-slate-500">First order only</span>}</td>
-                                <td className="px-4 py-3 text-slate-600">{c.modules.length ? c.modules.map((k) => modules.find((m) => m.key === k)?.name ?? k).join(', ') : 'All modules'}</td>
+                                <td className="px-4 py-3 text-slate-600">
+                                    {c.modules.length ? c.modules.map((k) => modules.find((m) => m.key === k)?.name ?? k).join(', ') : 'All modules'}
+                                    {c.seller && (
+                                        <span className="block text-xs">
+                                            Only{' '}
+                                            {can('sellers') ? <Link to={`/sellers/${c.seller}`} className="text-brand-700 hover:underline">{sellerName(c.seller)}</Link> : sellerName(c.seller)}
+                                        </span>
+                                    )}
+                                    <span className="block text-xs text-slate-500">Paid by {c.fundedBy === 'seller' ? 'the seller' : 'Nearmart'}</span>
+                                </td>
                                 <td className="px-4 py-3 tabular-nums">{c.usedCount}{c.usageLimit != null && ` / ${c.usageLimit}`}</td>
                                 <td className="px-4 py-3">{status(c)}</td>
                                 <td className="whitespace-nowrap px-4 py-3 text-right">

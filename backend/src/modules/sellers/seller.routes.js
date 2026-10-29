@@ -7,7 +7,7 @@ import { ForbiddenError } from '../../lib/errors.js';
 import { pageQuery } from '../../lib/pagination.js';
 import { created, ok } from '../../lib/response.js';
 import { normalizeIndianPhone, validate } from '../../lib/validate.js';
-import { authenticate, requireApprovedSeller, requirePermission, requireSeller, requireStaff } from '../../middleware/auth.js';
+import { authenticate, requireApprovedSeller, requirePermission, requireSeller, requireStaff, requireTradingSeller } from '../../middleware/auth.js';
 import { authLimiter, uploadLimiter } from '../../middleware/rateLimit.js';
 import * as auth from '../auth/auth.service.js';
 import { verifyAccessToken } from '../auth/token.service.js';
@@ -23,6 +23,7 @@ import * as orders from '../orders/order.service.js';
 import { istDate } from '../../lib/istTime.js';
 import { DOCUMENT_TYPES, MODULE_REQUEST_STATUSES, SELLER_STATUSES, Seller } from './seller.model.js';
 import { MAX_DOCUMENT_MB, readDocument, saveDocument } from './documents.js';
+import { notify } from '../notifications/notification.service.js';
 import * as payouts from './payout.service.js';
 import * as sellers from './seller.service.js';
 
@@ -208,9 +209,29 @@ sellerAppRoutes.post('/store/open', requireApprovedSeller, validate(z.object({ i
     ok(res, await sellers.setOpen(req.auth.id, req.body.isOpen), req.body.isOpen ? 'Store is open' : 'Store is closed');
 });
 
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24-hour)');
+
+sellerAppRoutes.put(
+    '/store/hours',
+    requireTradingSeller,
+    validate(
+        z.object({
+            hours: z.array(z.object({ day: z.number().int().min(0).max(6), open: hhmm, close: hhmm })).max(21).optional(),
+            holidays: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(60).optional()
+        })
+    ),
+    async (req, res) => {
+        ok(res, await sellers.setHours(req.auth.id, req.body), 'Opening hours saved');
+    }
+);
+
+sellerAppRoutes.get('/adjustments', requireTradingSeller, validate(z.object({ ...pageQuery }), 'query'), async (req, res) => {
+    ok(res, await payouts.listAdjustments(req.auth.id, req.validatedQuery));
+});
+
 // Everything below needs an approved store.
 
-sellerAppRoutes.get('/dashboard', requireApprovedSeller, async (req, res) => {
+sellerAppRoutes.get('/dashboard', requireTradingSeller, async (req, res) => {
     const sellerId = req.auth.id;
     const match = { 'seller.id': new mongoose.Types.ObjectId(sellerId) };
     const today = new Date(`${istDate()}T00:00:00.000+05:30`);
@@ -257,7 +278,7 @@ const assertCategoryAllowed = async (sellerId, module, categoryId) => {
 };
 
 const sellerProductFields = (body) => {
-    const { isFeatured, seller, sellerName, sellerHidden, ...rest } = body;
+    const { isFeatured, seller, sellerName, sellerHidden, sellerZones, review, ...rest } = body;
     return rest;
 };
 
@@ -271,14 +292,25 @@ sellerAppRoutes.get('/products/:id', requireApprovedSeller, async (req, res) => 
 
 sellerAppRoutes.post('/products', requireApprovedSeller, validate(schemas.productCreateSchema), async (req, res) => {
     await assertCategoryAllowed(req.auth.id, req.body.module, req.body.category);
-    const seller = await Seller.findById(req.auth.id).select('businessName').lean();
-    created(res, await products.createProduct(sellerProductFields(req.body), { ...sellerCtx(req), seller }), 'Product added');
+    const [seller, config] = await Promise.all([Seller.findById(req.auth.id).select('businessName zones').lean(), sellers.getConfig()]);
+    const product = await products.createProduct(
+        { ...sellerProductFields(req.body), sellerZones: seller.zones ?? [], review: { status: config.reviewNewProducts ? 'pending' : 'approved', note: '' } },
+        { ...sellerCtx(req), seller }
+    );
+    await sellers.syncVisibility(req.auth.id);
+    created(res, product, config.reviewNewProducts ? 'Product added. Nearmart will review it before customers see it.' : 'Product added');
 });
 
 sellerAppRoutes.patch('/products/:id', requireApprovedSeller, validate(schemas.productUpdateSchema), async (req, res) => {
     const current = await products.getProduct(req.params.id, sellerCtx(req));
     if (req.body.category) await assertCategoryAllowed(req.auth.id, current.module, req.body.category);
-    ok(res, await products.updateProduct(req.params.id, sellerProductFields(req.body), sellerCtx(req)), 'Product updated');
+    const updated = await products.updateProduct(req.params.id, sellerProductFields(req.body), sellerCtx(req));
+    if (current.review?.status === 'rejected') {
+        await Product.updateOne({ _id: updated._id }, { $set: { 'review.status': 'pending' } });
+        updated.review.status = 'pending';
+        return ok(res, updated, 'Product updated and sent back to Nearmart for review');
+    }
+    ok(res, updated, 'Product updated');
 });
 
 sellerAppRoutes.delete('/products/:id', requireApprovedSeller, async (req, res) => {
@@ -317,7 +349,7 @@ const SELLER_MOVES = ['accepted', 'packing', 'ready'];
 
 sellerAppRoutes.get(
     '/orders',
-    requireApprovedSeller,
+    requireTradingSeller,
     validate(z.object({ ...pageQuery, ...dateQuery, status: z.enum(['open', 'placed', 'accepted', 'packing', 'ready', 'dispatched', 'delivered', 'cancelled']).optional(), q: z.string().trim().max(40).optional() }), 'query'),
     async (req, res) => {
         const { from, to, ...rest } = req.validatedQuery;
@@ -325,42 +357,42 @@ sellerAppRoutes.get(
     }
 );
 
-sellerAppRoutes.get('/orders/:id', requireApprovedSeller, async (req, res) => {
+sellerAppRoutes.get('/orders/:id', requireTradingSeller, async (req, res) => {
     ok(res, await orders.getSellerOrder(req.auth.id, req.params.id));
 });
 
-sellerAppRoutes.post('/orders/:id/status', requireApprovedSeller, validate(z.object({ status: z.enum(SELLER_MOVES), note: z.string().trim().max(300).optional() })), async (req, res) => {
+sellerAppRoutes.post('/orders/:id/status', requireTradingSeller, validate(z.object({ status: z.enum(SELLER_MOVES), note: z.string().trim().max(300).optional() })), async (req, res) => {
     await orders.advanceStatus(req.params.id, { to: req.body.status, note: req.body.note, ...sellerCtx(req), allowedModules: null });
     ok(res, await orders.getSellerOrder(req.auth.id, req.params.id), 'Order updated');
 });
 
-sellerAppRoutes.post('/orders/:id/items/:lineId/unavailable', requireApprovedSeller, validate(z.object({ note: z.string().trim().max(200).optional() })), async (req, res) => {
+sellerAppRoutes.post('/orders/:id/items/:lineId/unavailable', requireTradingSeller, validate(z.object({ note: z.string().trim().max(200).optional() })), async (req, res) => {
     await orders.markItemUnavailable(req.params.id, req.params.lineId, { note: req.body.note, ...sellerCtx(req), allowedModules: null });
     ok(res, await orders.getSellerOrder(req.auth.id, req.params.id), 'Item marked unavailable');
 });
 
-sellerAppRoutes.post('/orders/:id/cancel', requireApprovedSeller, validate(z.object({ reason: z.string().trim().min(3, 'Give a reason').max(300) })), async (req, res) => {
+sellerAppRoutes.post('/orders/:id/cancel', requireTradingSeller, validate(z.object({ reason: z.string().trim().min(3, 'Give a reason').max(300) })), async (req, res) => {
     await orders.cancelOrder(req.params.id, { reason: req.body.reason, ...sellerCtx(req), allowedModules: null, allowed: ['placed', 'accepted', 'packing'] });
     ok(res, await orders.getSellerOrder(req.auth.id, req.params.id), 'Order cancelled');
 });
 
 // Money
 
-sellerAppRoutes.get('/earnings', requireApprovedSeller, validate(z.object({ ...pageQuery, ...dateQuery }), 'query'), async (req, res) => {
+sellerAppRoutes.get('/earnings', requireTradingSeller, validate(z.object({ ...pageQuery, ...dateQuery }), 'query'), async (req, res) => {
     const { from, to, ...rest } = req.validatedQuery;
     ok(res, await payouts.sellerEarnings(req.auth.id, { ...rest, from: istDay(from), to: istDay(to, true) }));
 });
 
-sellerAppRoutes.get('/payouts', requireApprovedSeller, validate(z.object({ ...pageQuery }), 'query'), async (req, res) => {
+sellerAppRoutes.get('/payouts', requireTradingSeller, validate(z.object({ ...pageQuery }), 'query'), async (req, res) => {
     ok(res, await payouts.listPayouts({ ...req.validatedQuery, sellerId: req.auth.id }));
 });
 
-sellerAppRoutes.get('/payouts/:id', requireApprovedSeller, async (req, res) => {
+sellerAppRoutes.get('/payouts/:id', requireTradingSeller, async (req, res) => {
     ok(res, await payouts.getPayout(req.params.id, { sellerId: req.auth.id }));
 });
 
 /** Commission rates that apply to this seller, per approved shop. */
-sellerAppRoutes.get('/commission', requireApprovedSeller, async (req, res) => {
+sellerAppRoutes.get('/commission', requireTradingSeller, async (req, res) => {
     const [seller, config] = await Promise.all([Seller.findById(req.auth.id).select('commission modules').lean(), sellers.getConfig()]);
     ok(res, {
         payoutHoldDays: config.payoutHoldDays,
@@ -384,9 +416,56 @@ const commissionValue = z.object({ percent: z.number().min(0).max(100).optional(
 adminSellerRoutes.put(
     '/config',
     requirePermission('sellers', 'update'),
-    validate(z.object({ commission: z.record(z.enum(PRODUCT_MODULES), commissionValue).optional(), payoutHoldDays: z.number().int().min(0).max(60).optional() })),
+    validate(
+        z.object({
+            commission: z.record(z.enum(PRODUCT_MODULES), commissionValue).optional(),
+            payoutHoldDays: z.number().int().min(0).max(60).optional(),
+            acceptAlertMinutes: z.number().int().min(1).max(240).optional(),
+            reviewNewProducts: z.boolean().optional()
+        })
+    ),
     async (req, res) => {
         ok(res, await sellers.updateConfig(req.body), 'Commission settings saved');
+    }
+);
+
+// Product review queue (registered before "/:id").
+adminSellerRoutes.get(
+    '/products/review',
+    requirePermission('sellers', 'view'),
+    validate(z.object({ ...pageQuery, status: z.enum(['pending', 'rejected', 'approved']).default('pending') }), 'query'),
+    async (req, res) => {
+        const { status, page, limit } = req.validatedQuery;
+        const filter = { seller: { $ne: null }, 'review.status': status };
+        const [items, total] = await Promise.all([
+            Product.find(filter).select('name brand module images seller sellerName review variants.label variants.pricePaise createdAt').sort({ createdAt: 1 }).skip((page - 1) * limit).limit(limit).lean(),
+            Product.countDocuments(filter)
+        ]);
+        ok(res, { items, page, limit, total, pages: Math.ceil(total / limit) });
+    }
+);
+
+adminSellerRoutes.post(
+    '/products/:productId/review',
+    requirePermission('sellers', 'update'),
+    validate(z.object({ decision: z.enum(['approved', 'rejected']), note: z.string().trim().max(300).optional() })),
+    async (req, res) => {
+        const product = await Product.findOneAndUpdate(
+            { _id: objectId.parse(req.params.productId), seller: { $ne: null } },
+            { $set: { review: { status: req.body.decision, note: req.body.note ?? '' } } },
+            { new: true }
+        ).lean();
+        if (!product) throw new ForbiddenError('Only marketplace sellers’ products are reviewed');
+        notify(
+            { ownerKind: 'seller', ownerId: product.seller },
+            {
+                title: req.body.decision === 'approved' ? `${product.name} is live` : `${product.name} needs changes`,
+                body: req.body.note || (req.body.decision === 'approved' ? 'Customers can now see and buy it.' : 'Edit it and Nearmart will look again.'),
+                type: 'seller.product.review',
+                data: { productId: String(product._id) }
+            }
+        ).catch(() => {});
+        ok(res, product, req.body.decision === 'approved' ? 'Product approved' : 'Product sent back');
     }
 );
 
@@ -439,10 +518,41 @@ adminSellerRoutes.post(
     }
 );
 
+adminSellerRoutes.get('/:id/adjustments', requirePermission('payouts', 'view'), validate(z.object({ ...pageQuery }), 'query'), async (req, res) => {
+    ok(res, await payouts.listAdjustments(objectId.parse(req.params.id), req.validatedQuery));
+});
+
+adminSellerRoutes.post(
+    '/:id/adjustments',
+    requirePermission('payouts', 'create'),
+    validate(z.object({ amountPaise: z.number().int().refine((n) => n !== 0, 'Enter an amount other than 0').refine((n) => Math.abs(n) <= 10_000_000, 'Too large'), reason: z.string().trim().min(3, 'Give a reason').max(300), orderId: objectId.optional() })),
+    async (req, res) => {
+        created(res, await payouts.addAdjustment(objectId.parse(req.params.id), req.body, req.auth.id), 'Adjustment added');
+    }
+);
+
+adminSellerRoutes.delete('/:id/adjustments/:adjustmentId', requirePermission('payouts', 'update'), async (req, res) => {
+    await payouts.removeAdjustment(objectId.parse(req.params.id), objectId.parse(req.params.adjustmentId));
+    ok(res, null, 'Adjustment removed');
+});
+
 adminSellerRoutes.patch(
     '/:id',
     requirePermission('sellers', 'update'),
-    validate(z.object({ commission: z.object({ percent: z.number().min(0).max(100).nullable(), fixedFeePaise: z.number().int().min(0).nullable() }).partial().optional(), zones: z.array(objectId).optional(), isActive: z.boolean().optional() })),
+    validate(
+        z.object({
+            commission: z
+                .object({
+                    percent: z.number().min(0).max(100).nullable(),
+                    fixedFeePaise: z.number().int().min(0).nullable(),
+                    byModule: z.record(z.enum(PRODUCT_MODULES), z.object({ percent: z.number().min(0).max(100).nullable(), fixedFeePaise: z.number().int().min(0).nullable() }).partial())
+                })
+                .partial()
+                .optional(),
+            zones: z.array(objectId).optional(),
+            isActive: z.boolean().optional()
+        })
+    ),
     async (req, res) => {
         ok(res, await sellers.updateSellerAdmin(objectId.parse(req.params.id), req.body), 'Seller updated');
     }
@@ -469,6 +579,11 @@ adminPayoutRoutes.get(
 adminPayoutRoutes.get('/sellers/:sellerId/earnings', requirePermission('payouts', 'view'), validate(z.object({ ...pageQuery, ...dateQuery }), 'query'), async (req, res) => {
     const { from, to, ...rest } = req.validatedQuery;
     ok(res, await payouts.sellerEarnings(objectId.parse(req.params.sellerId), { ...rest, from: istDay(from), to: istDay(to, true) }));
+});
+
+adminPayoutRoutes.get('/report', requirePermission('payouts', 'view'), validate(z.object({ ...dateQuery }), 'query'), async (req, res) => {
+    const { from, to } = req.validatedQuery;
+    ok(res, await payouts.commissionReport({ from: istDay(from), to: istDay(to, true) }));
 });
 
 adminPayoutRoutes.post('/', requirePermission('payouts', 'create'), validate(z.object({ sellerId: objectId })), async (req, res) => {

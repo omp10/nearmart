@@ -19,6 +19,10 @@ const couponSchema = new mongoose.Schema(
         minOrderPaise: { type: Number, min: 0, default: 0, validate: wholePaise },
         /** Empty = every product module. */
         modules: { type: [String], enum: BUSINESS_MODULES, default: [] },
+        /** Limit the coupon to one marketplace seller's items (null = any store, Nearmart's included). */
+        seller: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null },
+        /** Who pays the discount. A seller-funded coupon must be limited to that seller. */
+        fundedBy: { type: String, enum: ['platform', 'seller'], default: 'platform' },
         validFrom: { type: Date, default: null },
         validTo: { type: Date, default: null },
         /** Total redemptions allowed; null = unlimited. */

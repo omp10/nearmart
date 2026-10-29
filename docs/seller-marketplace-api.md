@@ -62,12 +62,16 @@ Session: `{ accessToken, expiresIn, seller }`. With `X-Client: mobile` the sessi
 | `POST /application/submit` | `400 "Please add: shop address, PAN, …"` lists anything missing |
 | `POST /modules` | `{ key, categories? }`: an approved seller asks to sell in another shop |
 
-## 4. Selling — `/seller` (approved only, otherwise `403`)
+## 4. Selling — `/seller`
+
+Catalogue and inventory need an **approved** store. Orders, dashboard, earnings, payouts and commission also work while **suspended**, so orders already received can be finished.
 
 | Call | Notes |
 |---|---|
 | `GET /dashboard` | `today {orders, salesPaise}`, `openOrders {status: n}`, `lowStockVariants`, `products`, `balance` |
-| `POST /store/open` | `{ isOpen }`: closing hides the products |
+| `POST /store/open` | `{ isOpen }`: the manual switch; off hides the products |
+| `PUT /store/hours` | `{ hours: [{ day: 0-6 (0 = Sunday), open: "HH:MM", close: "HH:MM" }], holidays: ["YYYY-MM-DD"] }`. Outside these hours (India time) products hide and checkout is refused. Empty `hours` = always open. `GET /me` returns `tradingNow` |
+| `GET /adjustments` | Credits and debits added by Nearmart (refunds after delivery, penalties); settled in the next payout |
 | `GET /catalog/categories?module=` | Category tree for the product form |
 | `GET/POST /products`, `GET/PATCH/DELETE /products/:id` | Same body as the admin product API. Only the seller's own products, only in approved shops/categories. `isFeatured` is admin-only |
 | `GET /inventory`, `POST /inventory/:productId/variants/:variantId/adjust`, `PUT …/stock`, `PATCH …/threshold` | Same as admin inventory |
@@ -79,6 +83,8 @@ Session: `{ accessToken, expiresIn, seller }`. With `X-Client: mobile` the sessi
 | `GET /earnings?from&to&page` | `totals {orders, grossPaise, commissionPaise, feePaise, netPaise}`, `balance`, per-order rows |
 | `GET /payouts`, `GET /payouts/:id` | Settlements and statements |
 | `GET /commission` | Rates per approved shop and `payoutHoldDays` |
+
+New products wait for Nearmart's review when the admin turns reviews on: `review: { status: approved | pending | rejected, note }`; pending and rejected products stay hidden. Tax details are checked on save: PAN format, GSTIN format and checksum, GSTIN matching the PAN, 14-digit FSSAI, IFSC.
 
 Notifications use the shared inbox (`GET /notifications`, …). Types: `seller.approved`,
 `seller.rejected`, `seller.suspended`, `seller.module`, `seller.order.new`,
@@ -108,13 +114,24 @@ net        = gross − commission − fee
 |---|---|
 | `GET /admin/sellers?status&q` (with `counts`), `GET /admin/sellers/:id`, `GET …/:id/documents/:docId` | `sellers.view` |
 | `POST …/:id/approve { modules?, commissionPercent?, fixedFeePaise?, note? }`, `POST …/:id/reject { reason }`, `POST …/:id/suspend { reason }` | `sellers.update` |
-| `POST …/:id/modules/:key { decision: approved\|rejected, note? }`, `PATCH …/:id { commission, zones, isActive }` | `sellers.update` |
-| `GET/PUT /admin/sellers/config { commission: { grocery: { percent, fixedFeePaise } … }, payoutHoldDays }` | `sellers.view` / `update` |
+| `POST …/:id/modules/:key { decision: approved\|rejected, note? }`, `PATCH …/:id { commission: { percent, fixedFeePaise, byModule: { grocery: { percent, fixedFeePaise } } }, zones, isActive }` | `sellers.update` |
+| `GET /admin/sellers/products/review?status=pending`, `POST /admin/sellers/products/:id/review { decision, note? }` | `sellers.view` / `update` |
+| `GET/POST /admin/sellers/:id/adjustments { amountPaise (±), reason, orderId? }`, `DELETE …/adjustments/:adjId` (unsettled only) | `payouts.view` / `create` / `update` |
+| `GET /admin/payouts/report?from&to`: commission, fees, seller-funded discounts and seller earnings per seller | `payouts.view` |
+| `GET/PUT /admin/sellers/config { commission: { grocery: { percent, fixedFeePaise } … }, payoutHoldDays, acceptAlertMinutes, reviewNewProducts }` | `sellers.view` / `update` |
 | `GET /admin/payouts/balances`, `GET /admin/payouts`, `GET /admin/payouts/:id`, `GET /admin/payouts/sellers/:id/earnings` | `payouts.view` |
 | `POST /admin/payouts { sellerId }` · `POST /:id/paid { mode, reference?, note? }` · `POST /:id/cancel` | `payouts.create` / `update` |
 
+Commission precedence: the seller's rate for that shop → the seller's rate for all shops → the shop default. A payout saves the bank details it's paid to, includes unsettled adjustments, and deducts seller-funded coupon discounts. If debits outweigh earnings, nothing is paid and the balance carries over.
+
+If a seller hasn't accepted an order within `acceptAlertMinutes`, staff get a `staff.order.seller_late` alert and the seller a `seller.order.reminder`, once. Nothing is cancelled automatically.
+
+Coupons can be limited to one seller (`seller`) and paid for by that seller (`fundedBy: "seller"`).
+
 ## 7. Customer app changes
 
+- **Service areas:** addresses carry `zones: { grocery: zoneId, … }`. Pass the ids as `zone=id1,id2` on `GET /catalog/products` to hide sellers that don't deliver there.
+- **Same trip:** a second order to the same address in the same shop within 30 minutes of an open order has no delivery fee and no minimum; the quote returns `trip: { withOrder }`.
 - **Product badge:** products carry `soldBy: { id, name }`, or `null` for Nearmart's own stock.
 - **Cart:** each cart group (one per shop) has `sellers: [{ sellerId, name, subtotalPaise, itemCount }]`.
 - **Checkout:** one order per seller. When a shop's cart mixes sellers, `POST /checkout/quote` and `POST /checkout` without `sellerId` return `409` with `details: [{ sellerId, name, issue: "choose_seller" }]`. Send `sellerId` (`""` = Nearmart) to check out that store's items; the rest stay in the cart. Carts with a single store work exactly as before.

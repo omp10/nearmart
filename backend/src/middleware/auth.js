@@ -71,6 +71,15 @@ export const requireApprovedSeller = (req, _res, next) => {
     return req.auth.status === 'approved' ? next() : next(new ForbiddenError('Your store is not approved yet'));
 };
 
+/**
+ * Orders and money: approved stores, and suspended ones too, so orders they
+ * already received can still be packed and their earnings stay visible.
+ */
+export const requireTradingSeller = (req, _res, next) => {
+    if (req.auth?.kind !== 'seller') return next(new ForbiddenError('Seller account required'));
+    return ['approved', 'suspended'].includes(req.auth.status) ? next() : next(new ForbiddenError('Your store is not approved yet'));
+};
+
 export const requireCustomer = (req, _res, next) =>
     req.auth?.kind === 'user' ? next() : next(new ForbiddenError('Customer account required'));
 

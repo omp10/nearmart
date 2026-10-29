@@ -25,6 +25,26 @@ export function useSaveApplication(onSaved) {
     return { ...mutation, errors: fieldErrors(mutation.error) };
 }
 
+/** Field names for KYC problems the API reports on the whole profile (paths from kycProblems). */
+const KYC_LABELS = { 'legal.pan': 'PAN (tax details)', 'legal.gstin': 'GSTIN (tax details)', 'legal.fssai': 'FSSAI licence (tax details)', 'bank.ifsc': 'IFSC (bank details)' };
+
+/**
+ * The message above a form. Field errors show under their fields; this keeps
+ * a short pointer to them, plus any problem in a section this form doesn't
+ * show (the API checks tax and bank details together).
+ */
+function formError(save, ownPaths) {
+    const entries = Object.entries(save.errors);
+    if (!entries.length) return save.error;
+    const elsewhere = entries.filter(([path]) => !ownPaths.includes(path));
+    if (!elsewhere.length) return 'Please fix the fields marked below.';
+    return elsewhere.map(([path, message]) => `${KYC_LABELS[path] ?? path}: ${message}`).join(' ');
+}
+
+/** Red border and screen-reader link for a field the API rejected. */
+const invalidProps = (errors, path) => (errors?.[path] ? { 'aria-invalid': true, 'aria-describedby': `${path}-error` } : {});
+const invalidClass = (errors, path) => (errors?.[path] ? 'border-red-400 focus:border-red-500 focus:ring-red-50' : '');
+
 function SaveBar({ save, label = 'Save', savedText = 'Saved.', extra }) {
     return (
         <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-4">
@@ -104,7 +124,7 @@ export function BusinessForm({ seller, mode = 'application', submitLabel, onSave
                     <input id="b-phone" className="input" type="tel" inputMode="tel" value={form.supportPhone} onChange={(ev) => set({ supportPhone: ev.target.value })} maxLength={20} placeholder="98765 43210" />
                 </Field>
                 {isStore && (
-                    <Field label="Opening hours" htmlFor="b-timings" errors={e} path="store.timings" hint='For example "8 AM – 10 PM, closed Sunday"'>
+                    <Field label="Timings shown to customers" htmlFor="b-timings" errors={e} path="store.timings" hint='Text only, e.g. "8 AM – 10 PM, closed Sunday". The hours that decide when you take orders are under Opening hours.'>
                         <input id="b-timings" className="input" value={form.timings} onChange={(ev) => set({ timings: ev.target.value })} maxLength={200} />
                     </Field>
                 )}
@@ -341,16 +361,16 @@ export function TaxForm({ seller, submitLabel, onSaved, locked = false }) {
             }}
             className="space-y-4"
         >
-            <ErrorNote error={save.error} />
+            <ErrorNote error={formError(save, ['legal.pan', 'legal.gstin', 'legal.fssai'])} />
             <div className="grid gap-4 sm:grid-cols-3">
                 <Field label="PAN (required)" htmlFor="t-pan" errors={e} path="legal.pan" hint="10 characters, e.g. ABCDE1234F">
-                    <input id="t-pan" className="input uppercase" value={form.pan} onChange={(ev) => set({ pan: ev.target.value })} maxLength={12} autoCapitalize="characters" />
+                    <input id="t-pan" className={`input uppercase ${invalidClass(e, 'legal.pan')}`} {...invalidProps(e, 'legal.pan')} value={form.pan} onChange={(ev) => set({ pan: ev.target.value.toUpperCase().replace(/\s/g, '') })} maxLength={12} autoCapitalize="characters" autoComplete="off" spellCheck={false} />
                 </Field>
-                <Field label="GSTIN" htmlFor="t-gst" errors={e} path="legal.gstin" hint="If you are GST registered">
-                    <input id="t-gst" className="input uppercase" value={form.gstin} onChange={(ev) => set({ gstin: ev.target.value })} maxLength={20} autoCapitalize="characters" />
+                <Field label="GSTIN" htmlFor="t-gst" errors={e} path="legal.gstin" hint="15 characters, if you are GST registered">
+                    <input id="t-gst" className={`input uppercase ${invalidClass(e, 'legal.gstin')}`} {...invalidProps(e, 'legal.gstin')} value={form.gstin} onChange={(ev) => set({ gstin: ev.target.value.toUpperCase().replace(/\s/g, '') })} maxLength={20} autoCapitalize="characters" autoComplete="off" spellCheck={false} />
                 </Field>
-                <Field label="FSSAI licence" htmlFor="t-fssai" errors={e} path="legal.fssai" hint="Needed if you sell food">
-                    <input id="t-fssai" className="input" value={form.fssai} onChange={(ev) => set({ fssai: ev.target.value })} maxLength={20} />
+                <Field label="FSSAI licence" htmlFor="t-fssai" errors={e} path="legal.fssai" hint="14 digits. Needed if you sell food">
+                    <input id="t-fssai" className={`input ${invalidClass(e, 'legal.fssai')}`} {...invalidProps(e, 'legal.fssai')} inputMode="numeric" value={form.fssai} onChange={(ev) => set({ fssai: ev.target.value.replace(/\s/g, '') })} maxLength={20} autoComplete="off" />
                 </Field>
             </div>
             <SaveBar save={save} label={submitLabel} />
@@ -507,7 +527,7 @@ export function BankForm({ seller, submitLabel, onSaved, note }) {
             }}
             className="space-y-4"
         >
-            <ErrorNote error={save.error} />
+            <ErrorNote error={formError(save, ['bank.accountName', 'bank.accountNumber', 'bank.ifsc', 'bank.upiId'])} />
             <p className="text-sm text-slate-600">Where Nearmart sends your money. Give a bank account, a UPI ID, or both.</p>
             {note}
             <div className="grid gap-4 sm:grid-cols-2">
@@ -518,7 +538,7 @@ export function BankForm({ seller, submitLabel, onSaved, note }) {
                     <input id="k-number" className="input" inputMode="numeric" value={form.accountNumber} onChange={(ev) => set({ accountNumber: ev.target.value.replace(/[^\d\s]/g, '') })} maxLength={24} autoComplete="off" />
                 </Field>
                 <Field label="IFSC" htmlFor="k-ifsc" errors={e} path="bank.ifsc" hint="11 characters, e.g. SBIN0001234">
-                    <input id="k-ifsc" className="input uppercase" value={form.ifsc} onChange={(ev) => set({ ifsc: ev.target.value })} maxLength={11} autoCapitalize="characters" />
+                    <input id="k-ifsc" className={`input uppercase ${invalidClass(e, 'bank.ifsc')}`} {...invalidProps(e, 'bank.ifsc')} value={form.ifsc} onChange={(ev) => set({ ifsc: ev.target.value.toUpperCase().replace(/\s/g, '') })} maxLength={11} autoCapitalize="characters" autoComplete="off" spellCheck={false} />
                 </Field>
                 <Field label="UPI ID" htmlFor="k-upi" errors={e} path="bank.upiId" className="sm:col-span-2" hint="e.g. yourname@okaxis">
                     <input id="k-upi" className="input" value={form.upiId} onChange={(ev) => set({ upiId: ev.target.value })} maxLength={60} autoComplete="off" />

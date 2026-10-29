@@ -6,7 +6,7 @@ import { api, errorMessage } from '../lib/api.js';
 import { formatPaise, paiseToRupees, rupeesToPaise } from '../lib/money.js';
 import { ago, mapsUrl } from '../lib/riders.js';
 import {
-    DOCUMENT_LABELS, MODULE_REQUEST_LABELS, MODULE_REQUEST_TONES, SELLER_MODULES, SELLER_STATUS_LABELS, SELLER_STATUS_TONES, commissionText
+    DOCUMENT_LABELS, KYC_FIELD_LABELS, MODULE_REQUEST_LABELS, MODULE_REQUEST_TONES, SELLER_MODULES, SELLER_STATUS_LABELS, SELLER_STATUS_TONES, WEEKDAYS, commissionText
 } from '../lib/sellers.js';
 import { BUSINESS_MODULES } from '../nav.js';
 import { Badge, ErrorNote, Modal, Pager, useDebounced } from '../components/ui.jsx';
@@ -42,7 +42,7 @@ const formToOverride = (form) => ({
 const overrideInvalid = (o) => Number.isNaN(o.percent) || Number.isNaN(o.fixedFeePaise) || (o.percent != null && (o.percent < 0 || o.percent > 100));
 
 /** Percent and fixed-fee inputs for a seller's own rate; blank fields fall back to the module default. */
-function OverrideFields({ form, onChange, idPrefix }) {
+function OverrideFields({ form, onChange, idPrefix, placeholder = 'Module default' }) {
     return (
         <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -54,7 +54,7 @@ function OverrideFields({ form, onChange, idPrefix }) {
                     min="0"
                     max="100"
                     step="0.01"
-                    placeholder="Module default"
+                    placeholder={placeholder}
                     value={form.percent}
                     onChange={(e) => onChange({ ...form, percent: e.target.value })}
                 />
@@ -67,7 +67,7 @@ function OverrideFields({ form, onChange, idPrefix }) {
                     type="number"
                     min="0"
                     step="0.01"
-                    placeholder="Module default"
+                    placeholder={placeholder}
                     value={form.fee}
                     onChange={(e) => onChange({ ...form, fee: e.target.value })}
                 />
@@ -94,6 +94,8 @@ function CommissionSettingsForm({ onDone }) {
         form ??
         (config && {
             hold: String(config.payoutHoldDays),
+            alert: String(config.acceptAlertMinutes ?? 10),
+            review: Boolean(config.reviewNewProducts),
             ...Object.fromEntries(SELLER_MODULES.map((m) => [m, { percent: String(config.commission[m]?.percent ?? 0), fee: paiseToRupees(config.commission[m]?.fixedFeePaise ?? 0) }]))
         });
     const set = (patch) => setForm({ ...values, ...patch });
@@ -112,9 +114,16 @@ function CommissionSettingsForm({ onDone }) {
 
     const body = {
         commission: Object.fromEntries(SELLER_MODULES.map((m) => [m, { percent: Number(values[m].percent), fixedFeePaise: rupeesToPaise(values[m].fee) ?? 0 }])),
-        payoutHoldDays: Number(values.hold)
+        payoutHoldDays: Number(values.hold),
+        acceptAlertMinutes: Number(values.alert),
+        reviewNewProducts: values.review
     };
-    const invalid = Object.values(body.commission).some((c) => Number.isNaN(c.percent) || Number.isNaN(c.fixedFeePaise)) || !Number.isInteger(body.payoutHoldDays);
+    const invalid =
+        Object.values(body.commission).some((c) => Number.isNaN(c.percent) || Number.isNaN(c.fixedFeePaise)) ||
+        !Number.isInteger(body.payoutHoldDays) ||
+        !Number.isInteger(body.acceptAlertMinutes) ||
+        body.acceptAlertMinutes < 1 ||
+        body.acceptAlertMinutes > 240;
 
     return (
         <form
@@ -162,11 +171,25 @@ function CommissionSettingsForm({ onDone }) {
                     </fieldset>
                 ))}
             </div>
-            <div className="sm:w-60">
-                <label className="label" htmlFor="cfg-hold">Payout hold (days after delivery)</label>
-                <input id="cfg-hold" className="input" type="number" min="0" max="60" step="1" value={values.hold} onChange={(e) => set({ hold: e.target.value })} required />
-                <p className="mt-1 text-xs text-slate-500">Time for returns and complaints before an order can be paid out.</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label className="label" htmlFor="cfg-hold">Payout hold (days after delivery)</label>
+                    <input id="cfg-hold" className="input" type="number" min="0" max="60" step="1" value={values.hold} onChange={(e) => set({ hold: e.target.value })} required />
+                    <p className="mt-1 text-xs text-slate-500">Time for returns and complaints before an order can be paid out.</p>
+                </div>
+                <div>
+                    <label className="label" htmlFor="cfg-alert">Alert staff if a seller hasn't accepted an order after N minutes</label>
+                    <input id="cfg-alert" className="input" type="number" min="1" max="240" step="1" value={values.alert} onChange={(e) => set({ alert: e.target.value })} required />
+                    <p className="mt-1 text-xs text-slate-500">1 to 240 minutes.</p>
+                </div>
             </div>
+            <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-1" checked={values.review} onChange={(e) => set({ review: e.target.checked })} />
+                <span>
+                    Review new seller products before customers see them
+                    <span className="block text-xs text-slate-500">New products wait in Product reviews until someone approves them. Products already live stay as they are.</span>
+                </span>
+            </label>
             <div className="flex justify-end gap-2">
                 <button type="button" className="btn-ghost" onClick={onDone}>Cancel</button>
                 <button type="submit" className="btn-primary" disabled={save.isPending || invalid}>{save.isPending ? 'Saving…' : 'Save settings'}</button>
@@ -206,6 +229,11 @@ export function Sellers() {
         placeholderData: keepPreviousData,
         refetchInterval: 60_000
     });
+    const { data: reviewCount } = useQuery({
+        queryKey: ['product-reviews', 'count'],
+        queryFn: () => api.get('/admin/sellers/products/review', { params: { status: 'pending', limit: 1 } }).then((r) => r.data.data.total),
+        refetchInterval: 60_000
+    });
     const counts = data?.counts ?? {};
     const countOf = (t) => (t === 'all' ? Object.keys(SELLER_STATUS_LABELS).reduce((sum, s) => sum + (counts[s] ?? 0), 0) : counts[t] ?? 0);
 
@@ -216,7 +244,13 @@ export function Sellers() {
                     <h1 className="text-2xl font-semibold">Sellers</h1>
                     <p className="text-sm text-slate-500">Shops that sell on Nearmart: review applications, approve the shops they sell in, and set their commission.</p>
                 </div>
-                {can('sellers', 'update') && <button type="button" className="btn-ghost border border-slate-200" onClick={() => setSettings(true)}>Commission settings</button>}
+                <div className="flex flex-wrap gap-2">
+                    <Link to="/sellers/reviews" className="btn-ghost border border-slate-200">
+                        Product reviews
+                        {reviewCount > 0 && <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 text-xs font-semibold tabular-nums text-amber-700">{reviewCount}</span>}
+                    </Link>
+                    {can('sellers', 'update') && <button type="button" className="btn-ghost border border-slate-200" onClick={() => setSettings(true)}>Commission settings</button>}
+                </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -538,9 +572,20 @@ function ModuleDecisionForm({ seller, decision, onDone }) {
     );
 }
 
+/** A seller's shops, in the order they asked for them. */
+const sellerShops = (seller) => (seller.modules?.length ? seller.modules.map((m) => m.key) : []);
+const shopOverride = (seller, m) => seller.commission?.byModule?.[m] ?? null;
+const hasShopOverride = (seller, m) => {
+    const o = shopOverride(seller, m);
+    return Boolean(o && (o.percent != null || o.fixedFeePaise != null));
+};
+
+/** Seller-wide rate plus an optional rate per shop; a shop's own rate wins. */
 function CommissionForm({ seller, config, onDone }) {
     const queryClient = useQueryClient();
+    const shops = sellerShops(seller);
     const [rate, setRate] = useState(overrideToForm(seller.commission));
+    const [perShop, setPerShop] = useState(() => Object.fromEntries(shops.map((m) => [m, overrideToForm(shopOverride(seller, m))])));
     const save = useMutation({
         mutationFn: (body) => api.patch(`/admin/sellers/${seller._id}`, body),
         onSuccess: () => {
@@ -550,24 +595,279 @@ function CommissionForm({ seller, config, onDone }) {
         }
     });
     const override = formToOverride(rate);
+    // Both blank sends both null, which clears that shop's own rate.
+    const byModule = Object.fromEntries(shops.map((m) => [m, formToOverride(perShop[m])]));
+    const invalid = overrideInvalid(override) || Object.values(byModule).some(overrideInvalid);
+
+    return (
+        <form
+            className="space-y-5"
+            onSubmit={(e) => {
+                e.preventDefault();
+                save.mutate({ commission: { ...override, ...(shops.length ? { byModule } : {}) } });
+            }}
+        >
+            <ErrorNote error={save.error} />
+            {shops.length > 0 && (
+                <div className="space-y-4">
+                    <p className="label">Per shop</p>
+                    {shops.map((m) => (
+                        <fieldset key={m} className="space-y-2 rounded-lg border border-slate-100 p-3">
+                            <legend className="px-1 text-sm font-medium">{moduleLabel(m)}</legend>
+                            <p className="text-xs text-slate-500">
+                                Now: {seller.effectiveCommission?.[m] ? commission(seller.effectiveCommission[m]) : '—'}
+                                {hasShopOverride(seller, m) ? ' (own rate for this shop)' : ''}
+                            </p>
+                            <OverrideFields form={perShop[m]} onChange={(f) => setPerShop((p) => ({ ...p, [m]: f }))} idPrefix={`commission-${m}`} placeholder="All-shops rate" />
+                        </fieldset>
+                    ))}
+                    <p className="text-xs text-slate-500">Leave both blank to use the all-shops rate below for that shop.</p>
+                </div>
+            )}
+            <div className="space-y-2">
+                <p className="label">All shops (used when a shop has no override of its own)</p>
+                <OverrideFields form={rate} onChange={setRate} idPrefix="commission" />
+                <DefaultsHint config={config} modules={shops.length ? shops : SELLER_MODULES} />
+            </div>
+            <p className="text-xs text-slate-500">Applies to new orders; orders already placed keep the rate they were placed with.</p>
+            <div className="flex justify-end gap-2">
+                <button type="button" className="btn-ghost" onClick={onDone}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={save.isPending || invalid}>{save.isPending ? 'Saving…' : 'Save commission'}</button>
+            </div>
+        </form>
+    );
+}
+
+/** Where the seller delivers: a set of Nearmart zones, or everywhere. */
+function ZonesForm({ seller, onDone }) {
+    const queryClient = useQueryClient();
+    const [selected, setSelected] = useState(() => (seller.zones ?? []).map((z) => String(z._id ?? z)));
+    const { data: zones = [], isLoading, error } = useQuery({
+        queryKey: ['zones'],
+        queryFn: () => api.get('/admin/zones').then((r) => r.data.data),
+        staleTime: 60_000
+    });
+    const save = useMutation({
+        mutationFn: () => api.patch(`/admin/sellers/${seller._id}`, { zones: selected }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['seller', seller._id] });
+            onDone();
+        }
+    });
+    const toggle = (zoneId) => setSelected((list) => (list.includes(zoneId) ? list.filter((z) => z !== zoneId) : [...list, zoneId]));
 
     return (
         <form
             className="space-y-4"
             onSubmit={(e) => {
                 e.preventDefault();
-                save.mutate({ commission: override });
+                save.mutate();
             }}
         >
-            <ErrorNote error={save.error} />
-            <OverrideFields form={rate} onChange={setRate} idPrefix="commission" />
-            <DefaultsHint config={config} modules={seller.modules.length ? seller.modules.map((m) => m.key) : SELLER_MODULES} />
-            <p className="text-xs text-slate-500">Applies to new orders; orders already placed keep the rate they were placed with.</p>
-            <div className="flex justify-end gap-2">
-                <button type="button" className="btn-ghost" onClick={onDone}>Cancel</button>
-                <button type="submit" className="btn-primary" disabled={save.isPending || overrideInvalid(override)}>{save.isPending ? 'Saving…' : 'Save commission'}</button>
+            <ErrorNote error={error || save.error} />
+            <p className="text-sm text-slate-600">Empty = delivers wherever Nearmart does. Customers outside these areas won't see this seller's products.</p>
+            {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+            {!isLoading && !zones.length && <p className="text-sm text-slate-500">No zones set up yet.</p>}
+            <fieldset className="max-h-72 space-y-2 overflow-y-auto">
+                <legend className="sr-only">Service areas</legend>
+                {zones.map((z) => (
+                    <label key={z._id} className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={selected.includes(String(z._id))} onChange={() => toggle(String(z._id))} />
+                        {z.name}
+                        {z.isActive === false && <Badge>Off</Badge>}
+                    </label>
+                ))}
+                {/* A saved zone that no longer exists can still be unticked. */}
+                {selected.filter((zid) => !zones.some((z) => String(z._id) === zid) && !isLoading).map((zid) => (
+                    <label key={zid} className="flex items-center gap-2 text-sm text-slate-500">
+                        <input type="checkbox" checked onChange={() => toggle(zid)} />
+                        {seller.zones?.find((z) => String(z._id ?? z) === zid)?.name ?? 'Removed zone'}
+                    </label>
+                ))}
+            </fieldset>
+            <div className="flex items-center justify-between gap-2">
+                <button type="button" className="btn-ghost px-2 py-1 text-sm" onClick={() => setSelected([])} disabled={!selected.length}>Clear (deliver everywhere)</button>
+                <div className="flex gap-2">
+                    <button type="button" className="btn-ghost" onClick={onDone}>Cancel</button>
+                    <button type="submit" className="btn-primary" disabled={save.isPending || isLoading}>{save.isPending ? 'Saving…' : 'Save areas'}</button>
+                </div>
             </div>
         </form>
+    );
+}
+
+/** Weekly hours and holidays, as the seller set them. */
+function OpeningHours({ seller }) {
+    const hours = [...(seller.hours ?? [])].sort((a, b) => a.day - b.day || a.open.localeCompare(b.open));
+    const byDay = WEEKDAYS.map((name, day) => ({ name, slots: hours.filter((h) => h.day === day) }));
+    const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10); // India date
+    const holidays = [...(seller.holidays ?? [])].sort();
+    const upcoming = holidays.filter((d) => d >= today);
+    const past = holidays.length - upcoming.length;
+
+    return (
+        <section className="card text-sm">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-semibold">Opening hours</h2>
+                {seller.status === 'approved' && <Badge tone={seller.tradingNow ? 'green' : 'red'}>{seller.tradingNow ? 'Open now' : 'Closed now'}</Badge>}
+            </div>
+            {!hours.length ? (
+                <p className="text-slate-600">No weekly hours set: open whenever the seller's switch is on.</p>
+            ) : (
+                <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                    {byDay.map((d) => (
+                        <div key={d.name} className="flex justify-between gap-3">
+                            <dt className="text-slate-500">{d.name}</dt>
+                            <dd className="tabular-nums">{d.slots.length ? d.slots.map((s) => `${s.open}–${s.close}`).join(', ') : <span className="text-slate-400">Closed</span>}</dd>
+                        </div>
+                    ))}
+                </dl>
+            )}
+            <div className="mt-3 border-t border-slate-100 pt-3">
+                <p className="text-xs text-slate-500">Holidays (closed all day)</p>
+                {upcoming.length ? (
+                    <p>{upcoming.map((d) => new Date(`${d}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })).join(', ')}</p>
+                ) : (
+                    <p className="text-slate-400">None coming up</p>
+                )}
+                {past > 0 && <p className="text-xs text-slate-400">{past} past {past === 1 ? 'date' : 'dates'} not shown</p>}
+            </div>
+            <p className="mt-2 text-xs text-slate-500">Times are India time. The seller sets these in their dashboard.</p>
+        </section>
+    );
+}
+
+/** Credit or debit to the seller's balance, settled in their next payout. */
+function AdjustmentForm({ seller, onDone }) {
+    const queryClient = useQueryClient();
+    const [form, setForm] = useState({ kind: 'credit', amount: '', reason: '', orderId: '' });
+    const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+    const add = useMutation({
+        mutationFn: (body) => api.post(`/admin/sellers/${seller._id}/adjustments`, body),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['seller-adjustments', seller._id] });
+            queryClient.invalidateQueries({ queryKey: ['payout-balances'] });
+            onDone();
+        }
+    });
+    const paise = rupeesToPaise(form.amount);
+    const orderId = form.orderId.trim();
+    const orderIdBad = orderId !== '' && !/^[a-f0-9]{24}$/i.test(orderId);
+    const invalid = !paise || Number.isNaN(paise) || paise < 0 || form.reason.trim().length < 3 || orderIdBad;
+
+    return (
+        <form
+            className="space-y-4"
+            onSubmit={(e) => {
+                e.preventDefault();
+                add.mutate({ amountPaise: form.kind === 'debit' ? -paise : paise, reason: form.reason.trim(), ...(orderId ? { orderId } : {}) });
+            }}
+        >
+            <ErrorNote error={add.error} />
+            <p className="text-sm text-slate-600">Adjustments settle in {seller.businessName}'s next payout. The seller is notified.</p>
+            <fieldset>
+                <legend className="label">Type</legend>
+                <div className="flex gap-4">
+                    <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" name="adj-kind" checked={form.kind === 'credit'} onChange={() => set({ kind: 'credit' })} />
+                        Credit (Nearmart pays the seller more)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" name="adj-kind" checked={form.kind === 'debit'} onChange={() => set({ kind: 'debit' })} />
+                        Debit (taken from the seller)
+                    </label>
+                </div>
+            </fieldset>
+            <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label className="label" htmlFor="adj-amount">Amount (₹)</label>
+                    <input id="adj-amount" className="input" type="number" min="0.01" step="0.01" value={form.amount} onChange={(e) => set({ amount: e.target.value })} required />
+                </div>
+                <div>
+                    <label className="label" htmlFor="adj-order">Order ID (optional)</label>
+                    <input id="adj-order" className="input font-mono" value={form.orderId} onChange={(e) => set({ orderId: e.target.value })} placeholder="From the order page's address" />
+                    {orderIdBad && <p className="mt-1 text-xs text-red-600">An order ID is 24 letters and digits (the last part of /orders/… in the address bar).</p>}
+                </div>
+            </div>
+            <div>
+                <label className="label" htmlFor="adj-reason">Reason (shown to the seller)</label>
+                <input id="adj-reason" className="input" value={form.reason} onChange={(e) => set({ reason: e.target.value })} required minLength={3} maxLength={300} placeholder="e.g. Damaged goods on #1234" />
+            </div>
+            <div className="flex justify-end gap-2">
+                <button type="button" className="btn-ghost" onClick={onDone}>Cancel</button>
+                <button type="submit" className={form.kind === 'debit' ? 'btn bg-red-600 text-white hover:bg-red-700' : 'btn-primary'} disabled={add.isPending || invalid}>
+                    {add.isPending ? 'Saving…' : `Add ${form.kind}${paise > 0 ? ` of ${formatPaise(paise)}` : ''}`}
+                </button>
+            </div>
+        </form>
+    );
+}
+
+function Adjustments({ seller, onAdd }) {
+    const { can } = useAuth();
+    const queryClient = useQueryClient();
+    const { data, isLoading, error } = useQuery({
+        queryKey: ['seller-adjustments', seller._id],
+        queryFn: () => api.get(`/admin/sellers/${seller._id}/adjustments`, { params: { limit: 100 } }).then((r) => r.data.data)
+    });
+    const remove = useMutation({
+        mutationFn: (adjustmentId) => api.delete(`/admin/sellers/${seller._id}/adjustments/${adjustmentId}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['seller-adjustments', seller._id] });
+            queryClient.invalidateQueries({ queryKey: ['payout-balances'] });
+        }
+    });
+    const unsettled = (data?.items ?? []).filter((a) => !a.payout).reduce((s, a) => s + a.amountPaise, 0);
+
+    return (
+        <section className="card text-sm">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-semibold">Adjustments</h2>
+                {can('payouts', 'create') && <button type="button" className="btn-ghost px-2 py-1" onClick={onAdd}>Add adjustment</button>}
+            </div>
+            <p className="mb-2 text-xs text-slate-500">
+                Credits and debits outside orders (refunds, damaged goods, goodwill). They settle in the seller's next payout.
+                {unsettled !== 0 && ` Waiting for the next payout: ${unsettled > 0 ? '+' : '−'}${formatPaise(Math.abs(unsettled))}.`}
+            </p>
+            <ErrorNote error={error || remove.error} />
+            {isLoading && <p className="text-slate-500">Loading…</p>}
+            {data?.items.length === 0 && <p className="text-slate-500">No adjustments yet.</p>}
+            <ul className="divide-y divide-slate-100">
+                {data?.items.map((a) => (
+                    <li key={a._id} className="flex flex-wrap items-start justify-between gap-3 py-2">
+                        <div>
+                            <p>{a.reason}</p>
+                            <p className="text-xs text-slate-500">
+                                {when(a.createdAt)}
+                                {a.order?.orderNumber && (
+                                    <>
+                                        {' · '}
+                                        {can('orders') ? <Link to={`/orders/${a.order._id}`} className="hover:underline">#{a.order.orderNumber}</Link> : `#${a.order.orderNumber}`}
+                                    </>
+                                )}
+                                {' · '}
+                                {a.payout ? (can('payouts') ? <Link to={`/payouts/${a.payout._id ?? a.payout}`} className="hover:underline">In a payout</Link> : 'In a payout') : 'Next payout'}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className={`font-medium tabular-nums ${a.amountPaise < 0 ? 'text-red-700' : 'text-brand-700'}`}>
+                                {a.amountPaise < 0 ? '−' : '+'}{formatPaise(Math.abs(a.amountPaise))}
+                            </span>
+                            {can('payouts', 'update') && !a.payout && (
+                                <button
+                                    type="button"
+                                    className="btn-ghost px-2 py-1 text-red-600"
+                                    disabled={remove.isPending}
+                                    onClick={() => window.confirm(`Remove this ${a.amountPaise < 0 ? 'debit' : 'credit'} of ${formatPaise(Math.abs(a.amountPaise))}?`) && remove.mutate(a._id)}
+                                >
+                                    Delete
+                                </button>
+                            )}
+                        </div>
+                    </li>
+                ))}
+            </ul>
+        </section>
     );
 }
 
@@ -600,12 +900,15 @@ export function SellerDetail() {
     const hasLocation = a.lat != null && a.lng != null;
     const hasOverride = seller.commission?.percent != null || seller.commission?.fixedFeePaise != null;
     const decidesShops = ['approved', 'suspended'].includes(seller.status);
+    const kycWarnings = Object.entries(seller.kycWarnings ?? {});
     const dialogTitle =
         dialog === 'approve' ? `Approve ${seller.businessName}`
             : dialog === 'reject' ? 'Reject application'
                 : dialog === 'suspend' ? `Suspend ${seller.businessName}`
                     : dialog === 'commission' ? 'Seller commission'
-                        : dialog ? `${dialog.decision === 'approved' ? 'Approve' : 'Reject'} ${moduleLabel(dialog.key)}` : '';
+                        : dialog === 'zones' ? 'Service areas'
+                        : dialog === 'adjustment' ? 'Add adjustment'
+                        : dialog ?`${dialog.decision === 'approved' ? 'Approve' : 'Reject'} ${moduleLabel(dialog.key)}` : '';
 
     return (
         <div className="space-y-6">
@@ -617,6 +920,7 @@ export function SellerDetail() {
                         <Badge tone={SELLER_STATUS_TONES[seller.status]}>{SELLER_STATUS_LABELS[seller.status] ?? seller.status}</Badge>
                         {!seller.isActive && <Badge tone="red">Login off</Badge>}
                         {seller.status === 'approved' && !seller.isOpen && <Badge>Store closed</Badge>}
+                        {seller.status === 'approved' && <Badge tone={seller.tradingNow ? 'green' : 'red'}>{seller.tradingNow ? 'Open now' : 'Closed now'}</Badge>}
                     </h1>
                     <p className="text-sm text-slate-500">
                         {seller.ownerName} · <a href={`tel:${seller.phone}`} className="hover:underline">{seller.phone}</a> ·{' '}
@@ -646,6 +950,16 @@ export function SellerDetail() {
             </div>
 
             <ErrorNote error={toggleActive.error} />
+            {kycWarnings.length > 0 && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                    <p className="font-medium">Check the tax and bank details</p>
+                    <ul className="mt-1 list-disc pl-5">
+                        {kycWarnings.map(([field, message]) => (
+                            <li key={field}><span className="font-medium">{KYC_FIELD_LABELS[field] ?? field}:</span> {message}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
             {seller.rejectionReason && ['rejected', 'suspended'].includes(seller.status) && (
                 <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
                     {seller.status === 'rejected' ? 'Returned to the seller' : 'Suspended'}: {seller.rejectionReason}
@@ -706,6 +1020,8 @@ export function SellerDetail() {
                         {seller.store?.cover && <img src={seller.store.cover} alt="Cover" className="mt-3 aspect-[3/1] w-full rounded object-cover" />}
                     </section>
 
+                    <OpeningHours seller={seller} />
+
                     <section className="card text-sm">
                         <h2 className="mb-3 font-semibold">Address</h2>
                         <p>
@@ -744,6 +1060,8 @@ export function SellerDetail() {
                     </div>
 
                     <Documents seller={seller} />
+
+                    {can('payouts') && seller.status !== 'draft' && <Adjustments seller={seller} onAdd={() => setDialog('adjustment')} />}
                 </div>
 
                 <div className="space-y-6">
@@ -752,12 +1070,16 @@ export function SellerDetail() {
                             <h2 className="font-semibold">Commission</h2>
                             {canUpdate && <button type="button" className="btn-ghost px-2 py-1" onClick={() => setDialog('commission')}>Edit</button>}
                         </div>
-                        <p>{hasOverride ? `Own rate: ${commission(seller.commission)}` : 'Shop defaults'}</p>
+                        <p>{hasOverride ? `All shops: ${commission(seller.commission)}` : 'Shop defaults'}</p>
                         {hasOverride && (seller.commission?.percent == null || seller.commission?.fixedFeePaise == null) && (
                             <p className="text-xs text-slate-500">Blank parts use the shop default.</p>
                         )}
                         {Object.entries(seller.effectiveCommission ?? {}).map(([m, c]) => (
-                            <p key={m} className="text-slate-600"><span className="text-slate-500">{moduleLabel(m)}: </span>{commission(c)}</p>
+                            <p key={m} className="text-slate-600">
+                                <span className="text-slate-500">{moduleLabel(m)}: </span>
+                                {commission(c)}
+                                {hasShopOverride(seller, m) && <span className="text-xs text-slate-500"> (own rate)</span>}
+                            </p>
                         ))}
                         {can('payouts') && seller.status !== 'draft' && (
                             <Link to="/payouts" className="block pt-2 text-brand-700 hover:underline">Balances and payouts →</Link>
@@ -767,7 +1089,10 @@ export function SellerDetail() {
                     <section className="card space-y-1 text-sm">
                         <h2 className="mb-2 font-semibold">Account</h2>
                         <p><span className="text-slate-500">Products: </span>{seller.productCount ?? 0}</p>
-                        <p><span className="text-slate-500">Delivers to: </span>{seller.zones?.length ? seller.zones.map((z) => z.name).join(', ') : 'Everywhere Nearmart delivers'}</p>
+                        <div className="flex items-start justify-between gap-2">
+                            <p><span className="text-slate-500">Delivers to: </span>{seller.zones?.length ? seller.zones.map((z) => z.name ?? 'Removed zone').join(', ') : 'Everywhere Nearmart delivers'}</p>
+                            {canUpdate && can('zones') && <button type="button" className="btn-ghost shrink-0 px-2 py-0.5" onClick={() => setDialog('zones')}>Edit</button>}
+                        </div>
                         <p><span className="text-slate-500">Last sign-in: </span>{seller.lastLoginAt ? ago(seller.lastLoginAt) : 'Never'}</p>
                         <p><span className="text-slate-500">Submitted: </span>{when(seller.submittedAt)}</p>
                         <p><span className="text-slate-500">Reviewed: </span>{when(seller.reviewedAt)}</p>
@@ -789,8 +1114,10 @@ export function SellerDetail() {
                 </div>
             </div>
 
-            <Modal open={Boolean(dialog)} title={dialogTitle} onClose={close} wide={dialog === 'approve'}>
+            <Modal open={Boolean(dialog)} title={dialogTitle} onClose={close} wide={dialog === 'approve' || dialog === 'commission'}>
                 {dialog === 'approve' && <ApproveForm seller={seller} config={config} onDone={close} />}
+                {dialog === 'zones' && <ZonesForm seller={seller} onDone={close} />}
+                {dialog === 'adjustment' && <AdjustmentForm seller={seller} onDone={close} />}
                 {(dialog === 'reject' || dialog === 'suspend') && <ReasonForm seller={seller} action={dialog} onDone={close} />}
                 {dialog === 'commission' && <CommissionForm seller={seller} config={config} onDone={close} />}
                 {dialog?.key && <ModuleDecisionForm seller={seller} decision={dialog} onDone={close} />}

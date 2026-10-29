@@ -119,5 +119,11 @@ export const publicProductQuery = z.object({
     maxPrice: z.coerce.number().int().min(0).optional(),
     inStock: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
     featured: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
-    sort: z.enum(['relevance', 'price_asc', 'price_desc', 'newest', 'name']).default('relevance')
+    sort: z.enum(['relevance', 'price_asc', 'price_desc', 'newest', 'name']).default('relevance'),
+    /** The customer's service areas (comma-separated ids): hides marketplace sellers that don't deliver there. */
+    zone: z
+        .string()
+        .regex(/^[a-f0-9]{24}(,[a-f0-9]{24}){0,9}$/i, 'Invalid zone')
+        .transform((v) => v.split(','))
+        .optional()
 });

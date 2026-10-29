@@ -26,14 +26,16 @@ checkoutRoutes.use(authenticate, requireCustomer);
 
 /** Prices one module's part of the cart for the checkout screen. Changes nothing. */
 checkoutRoutes.post('/quote', validate(z.object(checkoutFields)), async (req, res) => {
-    const { lines, pricing, slotRequired, zone, coupon, seller } = await orders.quote(req.auth.id, req.body);
+    const { lines, pricing, slotRequired, zone, coupon, seller, trip } = await orders.quote(req.auth.id, req.body);
     ok(res, {
         lines,
         pricing,
         slotRequired,
         zone: { id: String(zone._id), name: zone.name, minOrderPaise: zone.minOrderPaise, freeDeliveryAbovePaise: zone.freeDeliveryAbovePaise },
         coupon: coupon ? { code: coupon.code, description: coupon.description } : null,
-        seller: seller ? { id: String(seller._id), name: seller.businessName } : null
+        seller: seller ? { id: String(seller._id), name: seller.businessName } : null,
+        // Riding along with another order to the same address: free delivery and no minimum.
+        trip
     });
 });
 

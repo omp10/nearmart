@@ -11,3 +11,6 @@ export const rupeesToPaise = (value) => {
 };
 
 export const paiseToRupees = (paise) => (paise == null ? '' : String(paise / 100));
+
+/** Signed amount for credits and debits: "+₹50", "−₹20". */
+export const formatSignedPaise = (paise) => (paise == null ? '—' : `${paise < 0 ? '−' : '+'}${formatPaise(Math.abs(paise))}`);

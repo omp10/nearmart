@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { Link } from 'react-router';
 import { Plus } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { api } from '../lib/api.js';
-import { formatDate } from '../lib/format.js';
+import { formatDate, isoDay } from '../lib/format.js';
+import { DAY_NAMES, WEEK_ORDER, formatHoliday, formatRange, groupByDay } from '../lib/hours.js';
 import { MODULE_STATUS, SHOPS, shopLabel } from '../lib/shops.js';
 import { AddressForm, BankForm, BusinessForm, TaxForm } from '../components/sellerForms.jsx';
 import { Badge, ErrorNote, Loading, Modal, Notice, PageHeader, useShopOptions } from '../components/ui.jsx';
@@ -19,6 +21,43 @@ function Section({ title, subtitle, children }) {
     );
 }
 
+/** Summary of the weekly hours and upcoming holidays, with a link to edit them. */
+function HoursSummary({ seller }) {
+    const byDay = groupByDay(seller.hours);
+    const today = isoDay();
+    const upcoming = (seller.holidays ?? []).filter((d) => d >= today);
+    return (
+        <section className="card">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                <div>
+                    <h2 className="text-lg font-semibold">Opening hours</h2>
+                    <p className="text-sm text-slate-500">When customers can order from you.</p>
+                </div>
+                <Link to="/store/hours" className="btn-outline">Edit hours</Link>
+            </div>
+            {seller.hours?.length ? (
+                <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                    {WEEK_ORDER.map((d) => (
+                        <div key={d} className="flex justify-between gap-3 py-0.5">
+                            <dt className="text-slate-500">{DAY_NAMES[d]}</dt>
+                            <dd className="text-right text-slate-800">{byDay[d].length ? byDay[d].map(formatRange).join(', ') : 'Closed'}</dd>
+                        </div>
+                    ))}
+                </dl>
+            ) : (
+                <p className="text-sm text-slate-600">Always open: only the Open/Closed switch on your dashboard applies.</p>
+            )}
+            {upcoming.length > 0 && (
+                <p className="mt-3 text-sm text-slate-600">
+                    <span className="text-slate-500">Holidays: </span>
+                    {upcoming.slice(0, 5).map(formatHoliday).join(' · ')}
+                    {upcoming.length > 5 && ` and ${upcoming.length - 5} more`}
+                </p>
+            )}
+        </section>
+    );
+}
+
 export function StoreProfile() {
     const { seller } = useAuth();
     return (
@@ -27,6 +66,7 @@ export function StoreProfile() {
             <Section title="Store details">
                 <BusinessForm seller={seller} mode="store" />
             </Section>
+            <HoursSummary seller={seller} />
             <Section title="Shop address" subtitle="Where delivery partners collect your orders.">
                 <AddressForm seller={seller} />
             </Section>
